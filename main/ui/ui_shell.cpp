@@ -11,6 +11,7 @@
 #include "theme.h"
 #include "app_state.h"
 #include "settings.h"
+#include "app_commands.h"
 #include "ble_transport.h"
 #include "screens/settings_screen.h"
 #include "settings_store.h"
@@ -830,7 +831,7 @@ void do_send(void)
 {
     const char* t = lv_textarea_get_text(S.chat_input);
     if (!t || !t[0]) return;
-    ble_transport_send_text(t);          /* transmits + local-echoes into the log */
+    app_send_text(t);
     lv_textarea_set_text(S.chat_input, "");
 }
 

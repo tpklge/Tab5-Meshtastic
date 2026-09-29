@@ -34,6 +34,7 @@
 #include "settings_store.h"
 #include "message_store.h"
 #include "tab5_audio.h"
+#include "app_commands.h"
 
 static UartTransport s_uart_transport;
 static MeshSession   s_mesh_session;
@@ -111,4 +112,14 @@ extern "C" void app_main(void)
     }
 
     ESP_LOGI(TAG, "init done; transport=%d", transport);
+}
+
+extern "C" void app_send_text(const char* text)
+{
+    if (!text || !text[0]) return;
+    if (settings_store_get()->transport == 0) {
+        ble_transport_send_text(text);
+    } else {
+        s_mesh_session.send_text(text);
+    }
 }
