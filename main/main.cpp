@@ -34,10 +34,6 @@
 #include "lcd_tools.h"
 #include "tab5_audio.h"
 
-/* transport_drv.h is private to esp_hosted; forward-declare the readiness
- * probe so we can poll before calling nimble_port_init(). */
-extern "C" uint8_t is_transport_tx_ready(void);
-
 static const char* TAG = "tab5-mesh-v2";
 
 static m5::tab5::m5tab5_component s_board;
@@ -93,31 +89,10 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "esp_hosted_init()");
     ESP_ERROR_CHECK(esp_hosted_init());
 
-    /* esp_hosted_init() starts the SDIO handshake asynchronously and returns
-     * before the transport is TX-ready.  ble_transport_ll_init() (called from
-     * nimble_port_init()) will reset the C6 and retry 1000×1 s if called while
-     * the transport is still coming up.  Poll until TX-ready (max 10 s). */
-    app_state_set_conn(CONN_BOOT, "WAIT C6");
-    {
-        const int kMaxMs   = 30000;
-        const int kLogEvery = 5000;
-        int elapsed = 0;
-        int next_log = kLogEvery;
-        while (!is_transport_tx_ready() && elapsed < kMaxMs) {
-            vTaskDelay(pdMS_TO_TICKS(50));
-            elapsed += 50;
-            if (elapsed >= next_log) {
-                ESP_LOGI(TAG, "SDIO not TX-ready yet (%d ms)…", elapsed);
-                next_log += kLogEvery;
-            }
-        }
-        if (!is_transport_tx_ready()) {
-            ESP_LOGE(TAG, "SDIO transport not TX-ready after %d ms — continuing anyway", kMaxMs);
-        } else {
-            ESP_LOGI(TAG, "SDIO transport TX-ready after %d ms", elapsed);
-        }
-    }
-
+    /* transport_drv_reconfigure() (called from ble_transport_ll_init inside
+     * nimble_port_init) resets the C6 and waits up to MAX_RETRY_TRANSPORT_ACTIVE
+     * seconds for TX-readiness.  We patched that constant to 30 (from 1000) so
+     * the worst-case wait is 30 s instead of ~16 min. */
     app_state_set_conn(CONN_BOOT, "NIMBLE");
     ret = nimble_port_init();
     if (ret != ESP_OK) { ESP_LOGE(TAG, "nimble_port_init: %s", esp_err_to_name(ret)); return; }
