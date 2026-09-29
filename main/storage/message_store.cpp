@@ -1,220 +1,144 @@
 #include "message_store.h"
-#include "app_storage.h"
 #include "esp_log.h"
-#include "esp_crc.h"
-#include <stdio.h>
+#include "esp_timer.h"
+#include "nvs.h"
 #include <string.h>
-#include <stdlib.h>
+#include <stdio.h>
 
 static const char* TAG = "msg_store";
-static const char* MSG_PATH = STORAGE_MOUNT_POINT "/messages.bin";
+static const char* NS  = "t5msgs";
 
-#define FILE_MAGIC   0x54354D02u
-#define RECORD_MAGIC 0x4D534754u
-#define FILE_VERSION 1
+/* Ring buffer: 30 slots, each 120 bytes stored as an NVS blob.
+ * Compact on-disk struct — only what the UI needs. */
+#define MSG_SLOTS 30
+#define MSG_TEXT_MAX 107
 
 typedef struct __attribute__((packed)) {
-    uint32_t magic;
-    uint8_t  version;
-    uint8_t  _pad[3];
-    uint32_t count;
-    uint32_t crc32;
-} file_header_t;
+    uint8_t  direction;     /* 0=rx, 1=tx */
+    uint32_t from_node;
+    int64_t  timestamp_us;
+    uint8_t  text_len;
+    char     text[MSG_TEXT_MAX];
+} nvs_msg_t;                /* 120 bytes */
 
-static uint32_t s_seq_counter = 0;
-static uint32_t s_total = 0;
+static nvs_handle_t s_nvs   = 0;
+static uint16_t     s_head  = 0;   /* next slot to write (0..MSG_SLOTS-1) */
+static uint16_t     s_count = 0;   /* messages stored (0..MSG_SLOTS) */
+static uint32_t     s_total = 0;   /* monotonic append counter */
 
-static uint32_t crc32_buf(const void* buf, size_t len)
+static void slot_key(char* buf, uint16_t idx)
 {
-    return esp_crc32_le(0, (const uint8_t*)buf, len);
-}
-
-static bool write_file_header(FILE* f, uint32_t count)
-{
-    file_header_t hdr = {};
-    hdr.magic   = FILE_MAGIC;
-    hdr.version = FILE_VERSION;
-    hdr.count   = count;
-    hdr.crc32   = crc32_buf(&hdr, offsetof(file_header_t, crc32));
-    rewind(f);
-    return fwrite(&hdr, sizeof(hdr), 1, f) == 1;
+    snprintf(buf, 8, "m%02u", (unsigned)idx);
 }
 
 esp_err_t message_store_init(void)
 {
-    if (!app_storage_available()) return ESP_ERR_NOT_SUPPORTED;
-
-    FILE* f = fopen(MSG_PATH, "rb");
-    if (!f) {
-        // Create new file with header
-        f = fopen(MSG_PATH, "wb");
-        if (!f) { ESP_LOGE(TAG, "cannot create %s", MSG_PATH); return ESP_FAIL; }
-        write_file_header(f, 0);
-        fclose(f);
-        ESP_LOGI(TAG, "created new message store");
-        return ESP_OK;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &s_nvs);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "nvs_open: %s", esp_err_to_name(err));
+        s_nvs = 0;
+        return err;
     }
 
-    // Read and validate existing header
-    file_header_t hdr;
-    if (fread(&hdr, sizeof(hdr), 1, f) != 1) {
-        fclose(f); goto recreate;
-    }
-    if (hdr.magic != FILE_MAGIC || hdr.version != FILE_VERSION) {
-        fclose(f); goto recreate;
-    }
-    {
-        uint32_t expected = crc32_buf(&hdr, offsetof(file_header_t, crc32));
-        if (hdr.crc32 != expected) { fclose(f); goto recreate; }
-    }
+    uint16_t head = 0, count = 0;
+    uint32_t total = 0;
+    nvs_get_u16(s_nvs, "head",  &head);
+    nvs_get_u16(s_nvs, "count", &count);
+    nvs_get_u32(s_nvs, "total", &total);
 
-    // Scan forward to find highest seq
-    {
-        msg_record_hdr_t rec;
-        while (fread(&rec, sizeof(rec), 1, f) == 1) {
-            if (rec.magic != RECORD_MAGIC || rec.version != FILE_VERSION) break;
-            if (rec.seq > s_seq_counter) s_seq_counter = rec.seq;
-            s_total++;
-            // Skip text payload
-            if (rec.text_len > 0) {
-                fseek(f, rec.text_len, SEEK_CUR);
-            }
-        }
-        ESP_LOGI(TAG, "loaded: %lu records, max_seq=%lu", (unsigned long)s_total,
-                 (unsigned long)s_seq_counter);
-    }
-    fclose(f);
-    return ESP_OK;
+    if (head >= MSG_SLOTS) head = 0;
+    if (count > MSG_SLOTS) count = MSG_SLOTS;
 
-recreate:
-    ESP_LOGW(TAG, "invalid store — reinitialising");
-    s_seq_counter = 0;
-    s_total = 0;
-    f = fopen(MSG_PATH, "wb");
-    if (!f) return ESP_FAIL;
-    write_file_header(f, 0);
-    fclose(f);
+    s_head  = head;
+    s_count = count;
+    s_total = total;
+    ESP_LOGI(TAG, "loaded: %u messages (total ever=%lu)", (unsigned)s_count, (unsigned long)s_total);
     return ESP_OK;
 }
 
-esp_err_t message_store_append(uint32_t from_node, uint32_t to_node,
-                                uint32_t packet_id, uint8_t channel_idx,
-                                bool is_broadcast, bool is_tx,
-                                int64_t timestamp_us, int64_t abs_time_s,
-                                int16_t snr, int16_t rssi,
+esp_err_t message_store_append(uint32_t from_node, uint32_t /*to_node*/,
+                                uint32_t /*packet_id*/, uint8_t /*channel_idx*/,
+                                bool /*is_broadcast*/, bool is_tx,
+                                int64_t timestamp_us, int64_t /*abs_time_s*/,
+                                int16_t /*snr*/, int16_t /*rssi*/,
                                 const char* text)
 {
-    if (!app_storage_available()) return ESP_OK;
+    if (!s_nvs) return ESP_OK;  /* silent no-op — already logged at init */
 
-    size_t text_len = text ? strnlen(text, 255) : 0;
-
-    // Build record
-    msg_record_hdr_t rec = {};
-    rec.magic        = RECORD_MAGIC;
-    rec.seq          = ++s_seq_counter;
-    rec.version      = FILE_VERSION;
-    rec.direction    = is_tx ? 1 : 0;
-    rec.channel_idx  = channel_idx;
-    rec.is_broadcast = is_broadcast ? 1 : 0;
-    rec.from_node    = from_node;
-    rec.to_node      = to_node;
-    rec.packet_id    = packet_id;
-    rec.timestamp_us = timestamp_us;
-    rec.abs_time_s   = abs_time_s;
-    rec.snr          = snr;
-    rec.rssi         = rssi;
-    rec.text_len     = (uint16_t)text_len;
-    rec.crc32        = crc32_buf(&rec, offsetof(msg_record_hdr_t, crc32));
-
-    FILE* f = fopen(MSG_PATH, "ab");
-    if (!f) { ESP_LOGE(TAG, "cannot open for append"); return ESP_FAIL; }
-
-    bool ok = (fwrite(&rec, sizeof(rec), 1, f) == 1);
-    if (ok && text_len > 0) {
-        ok = (fwrite(text, 1, text_len, f) == text_len);
+    nvs_msg_t msg = {};
+    msg.direction    = is_tx ? 1 : 0;
+    msg.from_node    = from_node;
+    msg.timestamp_us = timestamp_us ? timestamp_us : esp_timer_get_time();
+    if (text) {
+        size_t len = strnlen(text, MSG_TEXT_MAX);
+        msg.text_len = (uint8_t)len;
+        memcpy(msg.text, text, len);
     }
-    fflush(f);
-    fclose(f);
 
-    if (ok) {
-        s_total++;
-        if (s_total > MSG_STORE_MAX_RECORDS) {
-            ESP_LOGW(TAG, "record limit reached — compaction needed");
-            // TODO: implement compaction (Phase 3 follow-up)
-        }
-    }
-    return ok ? ESP_OK : ESP_FAIL;
+    char key[8];
+    slot_key(key, s_head);
+    esp_err_t err = nvs_set_blob(s_nvs, key, &msg, sizeof(msg));
+    if (err != ESP_OK) { ESP_LOGW(TAG, "nvs_set_blob(%s): %s", key, esp_err_to_name(err)); return err; }
+
+    s_head = (s_head + 1) % MSG_SLOTS;
+    if (s_count < MSG_SLOTS) s_count++;
+    s_total++;
+
+    nvs_set_u16(s_nvs, "head",  s_head);
+    nvs_set_u16(s_nvs, "count", s_count);
+    nvs_set_u32(s_nvs, "total", s_total);
+    nvs_commit(s_nvs);
+    return ESP_OK;
 }
 
-uint32_t message_store_load_page(uint8_t channel_idx, uint32_t page,
+uint32_t message_store_load_page(uint8_t /*channel_idx*/, uint32_t page,
                                   msg_loaded_t* out, uint32_t count)
 {
-    if (!app_storage_available() || !out || count == 0) return 0;
+    if (!s_nvs || !out || count == 0 || s_count == 0) return 0;
 
-    FILE* f = fopen(MSG_PATH, "rb");
-    if (!f) return 0;
-
-    // Skip file header
-    fseek(f, sizeof(file_header_t), SEEK_SET);
-
-    // Collect matching records into a temp array (simple linear scan)
-    // For large files a proper index would be needed; for now acceptable.
-    uint32_t skip = page * count;
-    uint32_t loaded = 0;
+    /* Walk the ring oldest→newest. Oldest slot: (head - count + MSG_SLOTS) % MSG_SLOTS */
+    uint32_t skip    = page * count;
+    uint32_t loaded  = 0;
     uint32_t matched = 0;
 
-    msg_record_hdr_t rec;
-    char text_buf[256];
+    for (uint16_t i = 0; i < s_count && loaded < count; i++) {
+        uint16_t slot = (uint16_t)((s_head - s_count + i + MSG_SLOTS) % MSG_SLOTS);
+        char key[8];
+        slot_key(key, slot);
 
-    while (fread(&rec, sizeof(rec), 1, f) == 1) {
-        if (rec.magic != RECORD_MAGIC || rec.version != FILE_VERSION) break;
+        nvs_msg_t msg = {};
+        size_t sz = sizeof(msg);
+        if (nvs_get_blob(s_nvs, key, &msg, &sz) != ESP_OK) continue;
 
-        bool match = (channel_idx == 0xFF) || (rec.channel_idx == channel_idx);
-        if (rec.text_len > 0) {
-            size_t r = fread(text_buf, 1, rec.text_len < 255 ? rec.text_len : 255, f);
-            text_buf[r] = '\0';
-            if (r < rec.text_len) fseek(f, rec.text_len - r, SEEK_CUR);
-        } else {
-            text_buf[0] = '\0';
-        }
-
-        if (!match) continue;
         if (matched++ < skip) continue;
-        if (loaded >= count) break;
 
         msg_loaded_t* dst = &out[loaded++];
-        dst->seq          = rec.seq;
-        dst->direction    = rec.direction;
-        dst->channel_idx  = rec.channel_idx;
-        dst->is_broadcast = rec.is_broadcast;
-        dst->from_node    = rec.from_node;
-        dst->to_node      = rec.to_node;
-        dst->packet_id    = rec.packet_id;
-        dst->timestamp_us = rec.timestamp_us;
-        dst->snr          = rec.snr;
-        dst->rssi         = rec.rssi;
-        strncpy(dst->text, text_buf, sizeof(dst->text) - 1);
-        dst->text[sizeof(dst->text)-1] = '\0';
+        memset(dst, 0, sizeof(*dst));
+        dst->seq          = s_total - s_count + matched;
+        dst->direction    = msg.direction;
+        dst->from_node    = msg.from_node;
+        dst->timestamp_us = msg.timestamp_us;
+        uint8_t tlen = msg.text_len < (uint8_t)(sizeof(dst->text) - 1) ? msg.text_len : (uint8_t)(sizeof(dst->text) - 1);
+        memcpy(dst->text, msg.text, tlen);
+        dst->text[tlen] = '\0';
     }
-
-    fclose(f);
     return loaded;
 }
 
-uint32_t message_store_total(void)
-{
-    return s_total;
-}
+uint32_t message_store_total(void) { return s_total; }
 
 esp_err_t message_store_clear(void)
 {
-    if (!app_storage_available()) return ESP_OK;
-    FILE* f = fopen(MSG_PATH, "wb");
-    if (!f) return ESP_FAIL;
-    write_file_header(f, 0);
-    fclose(f);
-    s_seq_counter = 0;
-    s_total = 0;
-    ESP_LOGI(TAG, "message store cleared");
+    if (!s_nvs) return ESP_OK;
+    for (uint16_t i = 0; i < MSG_SLOTS; i++) {
+        char key[8]; slot_key(key, i);
+        nvs_erase_key(s_nvs, key);
+    }
+    s_head = 0; s_count = 0; s_total = 0;
+    nvs_set_u16(s_nvs, "head",  0);
+    nvs_set_u16(s_nvs, "count", 0);
+    nvs_set_u32(s_nvs, "total", 0);
+    nvs_commit(s_nvs);
+    ESP_LOGI(TAG, "cleared");
     return ESP_OK;
 }

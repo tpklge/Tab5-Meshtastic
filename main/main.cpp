@@ -59,10 +59,22 @@ extern "C" void app_main(void)
 
     settings_init();   /* load saved BLE device(s) before transport starts */
 
-    /* Persistent SPIFFS storage (messages, settings). Non-fatal if absent. */
+    /* Persistent storage via NVS. app_storage (SPIFFS) kept for future use but
+     * settings_store and message_store now use NVS directly. */
     app_storage_init();
     settings_store_init();
     message_store_init();
+
+    /* Restore persisted messages into AppState so history shows on first load. */
+    {
+        static msg_loaded_t hist[30];
+        uint32_t n = message_store_load_page(0xFF, 0, hist, 30);
+        for (uint32_t i = 0; i < n; i++) {
+            bool is_self = (hist[i].direction == 1);
+            app_state_add_message(hist[i].from_node, hist[i].text, is_self, hist[i].timestamp_us);
+        }
+        if (n) ESP_LOGI(TAG, "restored %lu messages from NVS", (unsigned long)n);
+    }
 
     /* Board bring-up, then power the C6 coprocessor BEFORE esp_hosted. */
     m5::tab5::m5tab5_component_config_t board_cfg = {};

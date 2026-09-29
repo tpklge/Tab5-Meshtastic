@@ -7,6 +7,7 @@
  */
 
 #include "app_state.h"
+#include "message_store.h"
 
 #include <string.h>
 
@@ -162,6 +163,8 @@ bool app_state_get_node(uint32_t num, node_rec_t* out)
 
 void app_state_add_message(uint32_t from, const char* text, bool is_self, int64_t now_us)
 {
+    message_store_append(from, 0, 0, 0, !is_self, is_self, now_us, 0, 0, 0, text);
+
     lock();
     msg_rec_t* m = &g.msgs[g.msg_total % APP_MAX_MSGS];
     m->from    = from;
