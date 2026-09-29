@@ -20,4 +20,9 @@ class m5tab5_component;
 // Call after board.begin() has populated the panel handle.
 esp_err_t app_lcd_lvgl_init(m5::tab5::m5tab5_component& board);
 
+// Set backlight brightness (5–100 %). Uses LEDC channel already initialized
+// by the BSP — safe to call after app_lcd_lvgl_init(). Does NOT reinitialize
+// the display or LEDC timer.
+void lcd_set_brightness(uint8_t percent);
+
 #endif  // LCD_TOOLS_H

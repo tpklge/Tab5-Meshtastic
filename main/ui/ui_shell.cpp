@@ -12,6 +12,9 @@
 #include "app_state.h"
 #include "settings.h"
 #include "ble_transport.h"
+#include "screens/settings_screen.h"
+#include "storage/settings_store.h"
+#include "board/tab5_audio.h"
 
 #include "lvgl.h"
 #include "lvgl_port.h"
@@ -34,9 +37,9 @@ namespace {
 
 const char* TAG = "ui_shell";
 
-constexpr int NUM_TABS = 3;
-const char* kNavText[NUM_TABS] = {"NODES", "CHAT", "RADIO"};
-const char* kNavIcon[NUM_TABS] = {LV_SYMBOL_LIST, LV_SYMBOL_KEYBOARD, LV_SYMBOL_WIFI};
+constexpr int NUM_TABS = 4;
+const char* kNavText[NUM_TABS] = {"NODES", "CHAT", "RADIO", "SET"};
+const char* kNavIcon[NUM_TABS] = {LV_SYMBOL_LIST, LV_SYMBOL_KEYBOARD, LV_SYMBOL_WIFI, LV_SYMBOL_SETTINGS};
 
 enum NodeSort { SORT_HEARD = 0, SORT_SNR = 1, SORT_HOPS = 2 };
 const char* kSortText[3] = {"Heard", "SNR", "Hops"};
@@ -45,6 +48,7 @@ struct ShellState {
     lv_obj_t* nav[NUM_TABS]   = {};
     lv_obj_t* panel[NUM_TABS] = {};
     int       active          = 0;
+    lv_obj_t* settings_panel  = nullptr; /* settings tab content */
 
     /* status-bar widgets driven by the snapshot */
     lv_obj_t* my_badge = nullptr;
@@ -223,6 +227,7 @@ void set_tab(int i)
         }
     }
     if (i == 2 && S.v_manager) radio_show(0);   /* land on the device manager */
+    if (i == 3 && S.settings_panel) settings_screen_refresh(S.settings_panel);
 }
 
 void nav_cb(lv_event_t* e) { set_tab((int)(intptr_t)lv_event_get_user_data(e)); }
@@ -796,6 +801,25 @@ void append_messages(void)
     } else {
         for (uint32_t i = n - new_count; i < n; i++) add_bubble(S.chat_list, &buf[i]);
     }
+    // Play notification for new incoming messages (not self-sent, not history load).
+    {
+        const app_settings_t* as = settings_store_get();
+        if (as->notif_en && new_count > 0) {
+            // Only notify for messages that arrived in steady state (not initial sync).
+            // Check: were we already in READY state for at least one refresh cycle?
+            app_snapshot_t snap; app_state_snapshot(&snap);
+            if (snap.state == CONN_READY) {
+                // Check if any new msg is received (not self)
+                for (uint32_t i = n - new_count; i < n; i++) {
+                    if (!buf[i].is_self) {
+                        tab5_audio_beep((audio_pattern_t)as->notif_pat);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     S.msg_seen = total;
 
     uint32_t cnt = lv_obj_get_child_count(S.chat_list);
@@ -1106,8 +1130,38 @@ lv_obj_t* make_radio_panel(lv_obj_t* parent)
     lv_obj_t* panel = box(parent, lv_pct(100), lv_pct(100));
     bg(panel, C_BG);
 
+    /* --- transport selector (BLE vs UART) --- */
+    lv_obj_t* transport_row = box(panel, lv_pct(100), 52);
+    bg(transport_row, C_CHROME);
+    flex_row(transport_row);
+    lv_obj_set_style_pad_hor(transport_row, 16, 0);
+    lv_obj_set_style_pad_column(transport_row, 12, 0);
+    hairline_side(transport_row, LV_BORDER_SIDE_BOTTOM);
+    label(transport_row, "Transport:", FONT_META, C_DIM);
+    // BLE button
+    lv_obj_t* ble_btn = lv_btn_create(transport_row);
+    lv_obj_set_size(ble_btn, 130, 36);
+    lv_obj_add_event_cb(ble_btn, [](lv_event_t*){
+        settings_store_set_transport(0);
+        // TODO: switch active transport via AppController
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* ble_lbl = lv_label_create(ble_btn);
+    lv_label_set_text(ble_lbl, LV_SYMBOL_BLUETOOTH " BLE");
+    lv_obj_center(ble_lbl);
+    // UART button
+    lv_obj_t* uart_btn = lv_btn_create(transport_row);
+    lv_obj_set_size(uart_btn, 180, 36);
+    lv_obj_add_event_cb(uart_btn, [](lv_event_t*){
+        settings_store_set_transport(1);
+        // TODO: switch active transport via AppController
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* uart_lbl = lv_label_create(uart_btn);
+    lv_label_set_text(uart_lbl, LV_SYMBOL_USB " RAK3172H (Grove)");
+    lv_obj_center(uart_lbl);
+
     /* --- manager view --- */
-    lv_obj_t* mgr = box(panel, lv_pct(100), lv_pct(100));
+    lv_obj_t* mgr = box(panel, lv_pct(100), 0);
+    lv_obj_set_flex_grow(mgr, 1);
     flex_col(mgr);
     S.v_manager = mgr;
     lv_obj_t* mh = box(mgr, lv_pct(100), 54);
@@ -1319,6 +1373,8 @@ void build_shell(void)
     S.panel[0] = make_nodes_panel(content);
     S.panel[1] = make_chat_panel(content);
     S.panel[2] = make_radio_panel(content);
+    S.panel[3] = settings_screen_make(content);
+    S.settings_panel = S.panel[3];
     S.detail   = make_detail_panel(content);   /* overlays the content area */
 
 #if UI_DIAG_OVERLAY

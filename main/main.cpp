@@ -30,6 +30,9 @@
 #include "ble_transport.h"
 #include "app_storage.h"
 #include "settings_store.h"
+#include "message_store.h"
+#include "lcd_tools.h"
+#include "tab5_audio.h"
 
 static const char* TAG = "tab5-mesh-v2";
 
@@ -54,6 +57,7 @@ extern "C" void app_main(void)
     /* Persistent SPIFFS storage (messages, settings). Non-fatal if absent. */
     app_storage_init();
     settings_store_init();
+    message_store_init();
 
     /* Board bring-up, then power the C6 coprocessor BEFORE esp_hosted. */
     m5::tab5::m5tab5_component_config_t board_cfg = {};
@@ -64,11 +68,19 @@ extern "C" void app_main(void)
 
     /* Display + LVGL shell first, so chrome is visible while the radio connects. */
     ESP_ERROR_CHECK(app_lcd_lvgl_init(s_board));
+
+    /* Restore saved brightness before the first frame is rendered. */
+    lcd_set_brightness(settings_store_get()->brightness);
+
     ui_start();
 
     /* Physical Tab5 keyboard (optional accessory) — feeds the chat composer and
      * PIN entry. Best-effort: absence is logged, not fatal. */
     kbd_start();
+
+    /* Audio: non-fatal if ES8388/I2S unavailable. */
+    tab5_audio_init();
+    tab5_audio_set_volume(settings_store_get()->notif_vol);
 
     /* P4<->C6 transport, then the NimBLE host, then our BLE transport. */
     ESP_LOGI(TAG, "esp_hosted_init()");

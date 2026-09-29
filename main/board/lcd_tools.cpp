@@ -1,114 +1,63 @@
 /*
- * Tab5-Meshtastic v2 — display bring-up.
+ * Tab5-Meshtastic v2 — LCD/LVGL init (PRD §4, §8).
  *
- * Landscape 1280x720 via PPA hardware rotation (LV_DISPLAY_ROTATION_90 +
- * use_ppa). This is the proven path carried forward from ../_archive/Tab5-Meshtastic;
- * do NOT switch to runtime LVGL rotation — it corrupts the render (PRD §4).
+ * LVGL port is initialised on CPU1 for best frame timing. The 1280×720 landscape
+ * view is achieved by a PPA hardware rotation declared in the display driver — NOT
+ * by runtime LVGL rotation (which corrupts the render; see PRD §4).
+ *
+ * Brightness: the BSP initialises LEDC_CHANNEL_1 (LEDC_TIMER_0, 12-bit, low-speed).
+ * We can update duty on that same channel without reinitialising.
  */
-
 #include "lcd_tools.h"
 
-#include "m5_tab5_component.h"
 #include "lvgl_port.h"
 #include "lvgl_port_disp.h"
 #include "lvgl_port_touch.h"
+#include "m5_tab5_component.h"
+#include "esp_log.h"
+#include "driver/ledc.h"
 
-#include <esp_log.h>
+static const char* TAG = "lcd_tools";
 
-namespace {
-
-const char* TAG = "lcd_tools";
-
-lv_display_t* s_lvgl_disp      = nullptr;
-lv_indev_t* s_lvgl_touch_indev = nullptr;
-
-// Native panel is portrait 720x1280; PPA rotates it to landscape for LVGL.
-constexpr uint32_t LCD_H_RES = 720;
-constexpr uint32_t LCD_V_RES = 1280;
-
-lv_display_rotation_t lcd_rotation_for_variant(const m5::tab5::m5tab5_variant_descriptor_t* variant)
-{
-    if (variant == nullptr) {
-        return LV_DISPLAY_ROTATION_90;
-    }
-    switch (variant->variant_id) {
-        case m5::tab5::M5TAB5_VARIANT_TAB5_LCD_ST7123_TOUCH_ST7123:
-        case m5::tab5::M5TAB5_VARIANT_TAB5_LCD_ST7121_TOUCH_ST7121:
-        case m5::tab5::M5TAB5_VARIANT_TAB5_LCD_ILI9881_TOUCH_GT911:
-        default:
-            return LV_DISPLAY_ROTATION_90;
-    }
-}
-
-}  // namespace
+/* LEDC config used by the BSP driver — must match
+ * components/m5_tab5_component/src/drivers/lcd_st7123/m5tab5_lcd_st7123.cpp */
+static constexpr ledc_mode_t    BACKLIGHT_LEDC_MODE    = LEDC_LOW_SPEED_MODE;
+static constexpr ledc_channel_t BACKLIGHT_LEDC_CHANNEL = LEDC_CHANNEL_1;
+static constexpr uint32_t       BACKLIGHT_LEDC_RES_BITS = 12;
+static constexpr uint32_t       BACKLIGHT_LEDC_MAX_DUTY = (1u << BACKLIGHT_LEDC_RES_BITS) - 1;
 
 esp_err_t app_lcd_lvgl_init(m5::tab5::m5tab5_component& board)
 {
-    if (s_lvgl_disp != nullptr) {
-        ESP_LOGW(TAG, "LVGL already initialized, skipping duplicate init");
-        return ESP_OK;
-    }
+    const lvgl_port_cfg_t port_cfg = {
+        .task_priority   = 6,
+        .task_stack      = 16384,
+        .task_affinity   = 1,     /* CPU1, avoids contention with BLE/UART on CPU0 */
+        .task_max_sleep_ms = 500,
+        .timer_period_ms = 5,
+    };
+    ESP_RETURN_ON_ERROR(lvgl_port_init(&port_cfg), TAG, "lvgl_port_init failed");
 
-    esp_lcd_panel_handle_t panel_handle = board.lcd_panel();
-    if (panel_handle == nullptr) {
-        ESP_LOGE(TAG, "LCD panel handle unavailable, call board.begin() first");
-        return ESP_ERR_INVALID_STATE;
-    }
+    /* The display sub-driver picks the correct DSI+PPA configuration for the
+     * detected variant. The rotation (LV_DISPLAY_ROTATION_90 + use_ppa) is baked
+     * in; do NOT override it at runtime. */
+    auto& disp_cfg = board.get_display_config();
+    ESP_RETURN_ON_ERROR(lvgl_port_add_disp_dsi(&disp_cfg), TAG, "add_disp_dsi failed");
 
-    ESP_LOGI(TAG, "Initializing LVGL port...");
-    lvgl_port_cfg_t lvgl_cfg   = {};
-    lvgl_cfg.task_priority     = 6;
-    lvgl_cfg.task_stack        = 16384;
-    lvgl_cfg.task_affinity     = 1;
-    lvgl_cfg.task_max_sleep_ms = 500;
-    lvgl_cfg.timer_period_ms   = 5;
-    esp_err_t ret              = lvgl_port_init(&lvgl_cfg);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize LVGL port: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    auto& touch_cfg = board.get_touch_config();
+    ESP_RETURN_ON_ERROR(lvgl_port_add_touch(&touch_cfg), TAG, "add_touch failed");
 
-    ESP_LOGI(TAG, "Adding LVGL display...");
-    lvgl_disp_cfg_t disp_cfg    = {};
-    disp_cfg.panel_handle       = panel_handle;
-    disp_cfg.hres               = LCD_H_RES;
-    disp_cfg.vres               = LCD_V_RES;
-    disp_cfg.buffer_size        = LCD_H_RES * LCD_V_RES;
-    disp_cfg.color_format       = LV_COLOR_FORMAT_RGB565;
-    disp_cfg.flags.full_refresh = 0;
-    disp_cfg.flags.direct_mode  = 1;
-    disp_cfg.flags.buff_spiram  = 1;
+    /* Match touch rotation to display rotation. */
+    lvgl_port_set_touch_rotation(LV_DISPLAY_ROTATION_90);
 
-    const m5::tab5::m5tab5_variant_descriptor_t* variant = board.variant();
-    lv_display_rotation_t rotation                       = lcd_rotation_for_variant(variant);
-    disp_cfg.flags.sw_rotate                             = (rotation != LV_DISPLAY_ROTATION_0);
-
-    lvgl_disp_dsi_cfg_t dsi_cfg = {};
-    dsi_cfg.sw_rotation         = rotation;
-    dsi_cfg.flags.avoid_tearing = 1;
-    dsi_cfg.flags.use_ppa       = (rotation != LV_DISPLAY_ROTATION_0);
-
-    s_lvgl_disp = lvgl_port_add_disp_dsi(&disp_cfg, &dsi_cfg);
-    if (s_lvgl_disp == nullptr) {
-        ESP_LOGE(TAG, "Failed to add LVGL display");
-        return ESP_FAIL;
-    }
-
-    esp_lcd_touch_handle_t touch_handle = board.touch_panel();
-    if (touch_handle != nullptr) {
-        ESP_LOGI(TAG, "Adding LVGL touch input...");
-        lvgl_touch_cfg_t touch_cfg = {};
-        touch_cfg.disp             = s_lvgl_disp;
-        touch_cfg.handle           = touch_handle;
-
-        s_lvgl_touch_indev = lvgl_port_add_touch(&touch_cfg);
-        if (s_lvgl_touch_indev == nullptr) {
-            ESP_LOGW(TAG, "Failed to add LVGL touch input");
-        } else if (dsi_cfg.sw_rotation != LV_DISPLAY_ROTATION_0) {
-            lvgl_port_set_touch_rotation(s_lvgl_touch_indev, dsi_cfg.sw_rotation);
-        }
-    }
-
-    ESP_LOGI(TAG, "LVGL initialized successfully");
+    ESP_LOGI(TAG, "LVGL initialised (1280×720 landscape, CPU1)");
     return ESP_OK;
+}
+
+void lcd_set_brightness(uint8_t percent)
+{
+    if (percent < 5)   percent = 5;
+    if (percent > 100) percent = 100;
+    uint32_t duty = (BACKLIGHT_LEDC_MAX_DUTY * percent) / 100;
+    ledc_set_duty(BACKLIGHT_LEDC_MODE, BACKLIGHT_LEDC_CHANNEL, duty);
+    ledc_update_duty(BACKLIGHT_LEDC_MODE, BACKLIGHT_LEDC_CHANNEL);
 }

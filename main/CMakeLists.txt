@@ -3,7 +3,9 @@ idf_component_register(
         "main.cpp"
         "board/lcd_tools.cpp"
         "board/keyboard.cpp"
+        "board/tab5_audio.cpp"
         "ui/ui_shell.cpp"
+        "ui/screens/settings_screen.cpp"
         "app/app_state.cpp"
         "app/settings.cpp"
         "mesh/mesh_proto.cpp"
@@ -21,6 +23,7 @@ idf_component_register(
         "."
         "board"
         "ui"
+        "ui/screens"
         "app"
         "mesh"
         "ble"
@@ -36,6 +39,9 @@ idf_component_register(
         esp_wifi_remote
         esp_driver_sdmmc
         esp_driver_uart
+        esp_driver_i2s
+        esp_driver_i2c
+        esp_driver_ledc
         esp_timer
         spiffs
         esp_crc
