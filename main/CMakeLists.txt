@@ -44,7 +44,7 @@ idf_component_register(
         esp_driver_ledc
         esp_timer
         spiffs
-        esp_crc
+        esp_rom
         m5_tab5_component
         m5_tab5_keyboard_component
         meshtastic_protos

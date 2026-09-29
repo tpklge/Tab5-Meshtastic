@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <functional>
+#include "esp_err.h"
 
 // Transport capability flags
 enum transport_caps_t : uint32_t {

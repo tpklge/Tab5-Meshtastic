@@ -1,12 +1,17 @@
 /*
  * Tab5-Meshtastic v2 — LCD/LVGL init (PRD §4, §8).
  *
- * LVGL port is initialised on CPU1 for best frame timing. The 1280×720 landscape
- * view is achieved by a PPA hardware rotation declared in the display driver — NOT
- * by runtime LVGL rotation (which corrupts the render; see PRD §4).
+ * Physical panel: 720(H)×1280(V) portrait DSI. The lvgl_port DSI driver uses
+ * PPA hardware rotation (sw_rotate + use_ppa) to present a 1280×720 landscape
+ * logical frame to LVGL. Pass hres=720, vres=1280 (physical) and set
+ * sw_rotation=LV_DISPLAY_ROTATION_90 + use_ppa=1 so the driver allocates the
+ * correctly-sized rotated buffers and LVGL ends up with a 1280×720 coordinate
+ * space — which is what the shell layout expects (PRD §4).
  *
- * Brightness: the BSP initialises LEDC_CHANNEL_1 (LEDC_TIMER_0, 12-bit, low-speed).
- * We can update duty on that same channel without reinitialising.
+ * Do NOT call lv_display_set_rotation() at runtime — that path corrupts the
+ * render (PRD §4, hardware constraint).
+ *
+ * Brightness: BSP initialises LEDC_CHANNEL_1 (LEDC_TIMER_0, 12-bit, low-speed).
  */
 #include "lcd_tools.h"
 
@@ -15,41 +20,79 @@
 #include "lvgl_port_touch.h"
 #include "m5_tab5_component.h"
 #include "esp_log.h"
+#include "esp_check.h"
 #include "driver/ledc.h"
 
 static const char* TAG = "lcd_tools";
 
-/* LEDC config used by the BSP driver — must match
- * components/m5_tab5_component/src/drivers/lcd_st7123/m5tab5_lcd_st7123.cpp */
-static constexpr ledc_mode_t    BACKLIGHT_LEDC_MODE    = LEDC_LOW_SPEED_MODE;
-static constexpr ledc_channel_t BACKLIGHT_LEDC_CHANNEL = LEDC_CHANNEL_1;
+/* Physical panel dimensions (portrait). PPA rotation makes LVGL see 1280×720. */
+static constexpr uint32_t PANEL_H_RES = 720;
+static constexpr uint32_t PANEL_V_RES = 1280;
+
+static constexpr ledc_mode_t    BACKLIGHT_LEDC_MODE     = LEDC_LOW_SPEED_MODE;
+static constexpr ledc_channel_t BACKLIGHT_LEDC_CHANNEL  = LEDC_CHANNEL_1;
 static constexpr uint32_t       BACKLIGHT_LEDC_RES_BITS = 12;
 static constexpr uint32_t       BACKLIGHT_LEDC_MAX_DUTY = (1u << BACKLIGHT_LEDC_RES_BITS) - 1;
 
 esp_err_t app_lcd_lvgl_init(m5::tab5::m5tab5_component& board)
 {
-    const lvgl_port_cfg_t port_cfg = {
-        .task_priority   = 6,
-        .task_stack      = 16384,
-        .task_affinity   = 1,     /* CPU1, avoids contention with BLE/UART on CPU0 */
-        .task_max_sleep_ms = 500,
-        .timer_period_ms = 5,
-    };
+    esp_lcd_panel_handle_t panel = board.lcd_panel();
+    if (!panel) {
+        ESP_LOGE(TAG, "lcd_panel() null — call board.begin() first");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    lvgl_port_cfg_t port_cfg = lvgl_PORT_INIT_CONFIG();
+    port_cfg.task_stack    = 16384;
+    port_cfg.task_affinity = 1;   /* CPU1: avoids BLE/UART contention on CPU0 */
     ESP_RETURN_ON_ERROR(lvgl_port_init(&port_cfg), TAG, "lvgl_port_init failed");
 
-    /* The display sub-driver picks the correct DSI+PPA configuration for the
-     * detected variant. The rotation (LV_DISPLAY_ROTATION_90 + use_ppa) is baked
-     * in; do NOT override it at runtime. */
-    auto& disp_cfg = board.get_display_config();
-    ESP_RETURN_ON_ERROR(lvgl_port_add_disp_dsi(&disp_cfg), TAG, "add_disp_dsi failed");
+    /* Physical portrait dimensions + PPA 90° rotation → LVGL sees 1280×720. */
+    const lvgl_disp_cfg_t disp_cfg = {
+        .io_handle      = nullptr,
+        .panel_handle   = panel,
+        .control_handle = nullptr,
+        .buffer_size    = PANEL_H_RES * PANEL_V_RES,
+        .double_buffer  = true,
+        .trans_size     = 0,
+        .hres           = PANEL_H_RES,
+        .vres           = PANEL_V_RES,
+        .monochrome     = false,
+        .rotation       = {.swap_xy = false, .mirror_x = false, .mirror_y = false},
+        .color_format   = LV_COLOR_FORMAT_RGB565,
+        .flags          = {
+            .buff_dma    = 0,
+            .buff_spiram = 0,
+            .sw_rotate   = 1,   /* enable PPA-backed rotation */
+            .swap_bytes  = 0,
+            .full_refresh = 0,
+            .direct_mode = 1,
+        },
+    };
+    const lvgl_disp_dsi_cfg_t dsi_cfg = {
+        .sw_rotation = LV_DISPLAY_ROTATION_90,
+        .flags = {.avoid_tearing = 1, .use_ppa = 1},
+    };
 
-    auto& touch_cfg = board.get_touch_config();
-    ESP_RETURN_ON_ERROR(lvgl_port_add_touch(&touch_cfg), TAG, "add_touch failed");
+    lv_display_t* disp = lvgl_port_add_disp_dsi(&disp_cfg, &dsi_cfg);
+    if (!disp) {
+        ESP_LOGE(TAG, "lvgl_port_add_disp_dsi failed");
+        return ESP_FAIL;
+    }
 
-    /* Match touch rotation to display rotation. */
-    lvgl_port_set_touch_rotation(LV_DISPLAY_ROTATION_90);
+    /* Register touch if available. No touch rotation needed — PPA handles it. */
+    esp_lcd_touch_handle_t tp = board.touch_panel();
+    if (tp) {
+        const lvgl_touch_cfg_t touch_cfg = {
+            .disp   = disp,
+            .handle = tp,
+            .scale  = {.x = 1.0f, .y = 1.0f},
+        };
+        lvgl_port_add_touch(&touch_cfg);
+    }
 
-    ESP_LOGI(TAG, "LVGL initialised (1280×720 landscape, CPU1)");
+    ESP_LOGI(TAG, "LVGL init: panel %" PRIu32 "x%" PRIu32 " + PPA 90deg -> 1280x720 landscape",
+             PANEL_H_RES, PANEL_V_RES);
     return ESP_OK;
 }
 

@@ -3,9 +3,6 @@
 #include "lcd_tools.h"
 #include "tab5_audio.h"
 #include "../theme.h"
-#include "esp_log.h"
-
-static const char* TAG = "settings_screen";
 
 static lv_obj_t* s_brightness_slider = nullptr;
 static lv_obj_t* s_brightness_label  = nullptr;
@@ -41,7 +38,8 @@ static void vol_cb(lv_event_t* e)
 {
     lv_obj_t* slider = (lv_obj_t*)lv_event_get_target(e);
     int32_t val = lv_slider_get_value(slider);
-    if (val < 0) val = 0; if (val > 100) val = 100;
+    if (val < 0) val = 0;
+    if (val > 100) val = 100;
 
     char buf[8];
     snprintf(buf, sizeof(buf), "%d%%", (int)val);
@@ -84,14 +82,14 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     // --- Screen section ---
     lv_obj_t* sec1 = lv_label_create(panel);
     lv_label_set_text(sec1, "DISPLAY");
-    lv_obj_set_style_text_color(sec1, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_text_color(sec1, lv_color_hex(C_DIM), 0);
     lv_obj_set_style_text_font(sec1, &lv_font_montserrat_14, 0);
 
     // Brightness row
     lv_obj_t* row1 = lv_obj_create(panel);
     lv_obj_set_size(row1, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(row1, lv_color_hex(C_CARD), 0);
-    lv_obj_set_style_radius(row1, R_CARD, 0);
+    lv_obj_set_style_bg_color(row1, lv_color_hex(C_SURF2), 0);
+    lv_obj_set_style_radius(row1, M_RAD_M, 0);
     lv_obj_set_style_border_width(row1, 0, 0);
     lv_obj_set_style_pad_all(row1, 12, 0);
     lv_obj_set_flex_flow(row1, LV_FLEX_FLOW_COLUMN);
@@ -107,7 +105,7 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
 
     lv_obj_t* bl = lv_label_create(rl1);
     lv_label_set_text(bl, "Brightness");
-    lv_obj_set_style_text_color(bl, lv_color_hex(C_FG), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(C_HI), 0);
     lv_obj_set_style_text_font(bl, &lv_font_montserrat_16, 0);
 
     s_brightness_label = lv_label_create(rl1);
@@ -122,7 +120,7 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     // Reset brightness button
     lv_obj_t* rst_btn = lv_btn_create(row1);
     lv_obj_set_size(rst_btn, LV_SIZE_CONTENT, 36);
-    lv_obj_set_style_bg_color(rst_btn, lv_color_hex(C_SURFACE), 0);
+    lv_obj_set_style_bg_color(rst_btn, lv_color_hex(C_SURF), 0);
     lv_obj_add_event_cb(rst_btn, [](lv_event_t* e){
         (void)e;
         lv_slider_set_value(s_brightness_slider, 80, LV_ANIM_OFF);
@@ -137,13 +135,13 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     // --- Audio section ---
     lv_obj_t* sec2 = lv_label_create(panel);
     lv_label_set_text(sec2, "NOTIFICATIONS");
-    lv_obj_set_style_text_color(sec2, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_text_color(sec2, lv_color_hex(C_DIM), 0);
     lv_obj_set_style_text_font(sec2, &lv_font_montserrat_14, 0);
 
     lv_obj_t* row2 = lv_obj_create(panel);
     lv_obj_set_size(row2, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(row2, lv_color_hex(C_CARD), 0);
-    lv_obj_set_style_radius(row2, R_CARD, 0);
+    lv_obj_set_style_bg_color(row2, lv_color_hex(C_SURF2), 0);
+    lv_obj_set_style_radius(row2, M_RAD_M, 0);
     lv_obj_set_style_border_width(row2, 0, 0);
     lv_obj_set_style_pad_all(row2, 12, 0);
     lv_obj_set_flex_flow(row2, LV_FLEX_FLOW_COLUMN);
@@ -159,7 +157,7 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     lv_obj_set_flex_align(nr_en, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t* enl = lv_label_create(nr_en);
     lv_label_set_text(enl, "Sound notifications");
-    lv_obj_set_style_text_color(enl, lv_color_hex(C_FG), 0);
+    lv_obj_set_style_text_color(enl, lv_color_hex(C_HI), 0);
     lv_obj_set_style_text_font(enl, &lv_font_montserrat_16, 0);
     s_notif_sw = lv_switch_create(nr_en);
     lv_obj_add_event_cb(s_notif_sw, notif_sw_cb, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -182,7 +180,7 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     lv_obj_set_flex_align(nr_vol_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t* voll = lv_label_create(nr_vol_row);
     lv_label_set_text(voll, "Volume");
-    lv_obj_set_style_text_color(voll, lv_color_hex(C_FG), 0);
+    lv_obj_set_style_text_color(voll, lv_color_hex(C_HI), 0);
     lv_obj_set_style_text_font(voll, &lv_font_montserrat_16, 0);
     s_vol_label = lv_label_create(nr_vol_row);
     lv_obj_set_style_text_color(s_vol_label, lv_color_hex(C_GREEN), 0);
@@ -202,7 +200,7 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     lv_obj_set_flex_align(pat_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t* patl = lv_label_create(pat_row);
     lv_label_set_text(patl, "Pattern");
-    lv_obj_set_style_text_color(patl, lv_color_hex(C_FG), 0);
+    lv_obj_set_style_text_color(patl, lv_color_hex(C_HI), 0);
     lv_obj_set_style_text_font(patl, &lv_font_montserrat_16, 0);
     s_pat_dd = lv_dropdown_create(pat_row);
     lv_dropdown_set_options(s_pat_dd, "Silent\nShort beep\nDouble beep\nTriple beep");
