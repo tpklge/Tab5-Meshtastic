@@ -2,6 +2,7 @@
 #include "settings_store.h"
 #include "lcd_tools.h"
 #include "tab5_audio.h"
+#include "app_clock.h"
 #include "../theme.h"
 
 static lv_obj_t* s_brightness_slider = nullptr;
@@ -10,6 +11,89 @@ static lv_obj_t* s_notif_sw          = nullptr;
 static lv_obj_t* s_vol_slider        = nullptr;
 static lv_obj_t* s_vol_label         = nullptr;
 static lv_obj_t* s_pat_dd            = nullptr;
+
+static lv_obj_t* s_clock_fields[6] = {};
+static lv_obj_t* s_clock_status = nullptr;
+static lv_obj_t* s_clock_now = nullptr;
+
+static void clock_save_cb(lv_event_t*)
+{
+    struct tm t{};
+    t.tm_mday = lv_dropdown_get_selected(s_clock_fields[0]) + 1;
+    t.tm_mon = lv_dropdown_get_selected(s_clock_fields[1]);
+    t.tm_year = lv_dropdown_get_selected(s_clock_fields[2]) + 100;
+    t.tm_hour = lv_dropdown_get_selected(s_clock_fields[3]);
+    t.tm_min = lv_dropdown_get_selected(s_clock_fields[4]);
+    int offset = ((int)lv_dropdown_get_selected(s_clock_fields[5]) - 48) * 15;
+    esp_err_t err = app_clock_set(t, offset);
+    lv_label_set_text(s_clock_status, err == ESP_OK ? "Data e hora salvas no Tab5." :
+        err == ESP_ERR_INVALID_ARG ? "Data invalida. Confira o dia, mes e ano." : "Falha ao salvar o relogio. Tente novamente.");
+}
+
+static void make_clock_section(lv_obj_t* panel)
+{
+    lv_obj_t* title = lv_label_create(panel);
+    lv_label_set_text(title, "DATA E HORA");
+    lv_obj_set_style_text_color(title, lv_color_hex(C_DIM), 0);
+    lv_obj_t* card = lv_obj_create(panel);
+    lv_obj_set_size(card, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(card, lv_color_hex(C_SURF2), 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(card, 12, 0);
+    lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    s_clock_now = lv_label_create(card);
+    lv_obj_set_style_text_color(s_clock_now, lv_color_hex(C_HI), 0);
+    lv_timer_create([](lv_timer_t*) {
+        if (s_clock_now) {
+            char text[40]; app_clock_format(text, sizeof(text), true);
+            if (strcmp(text, lv_label_get_text(s_clock_now))) lv_label_set_text(s_clock_now, text);
+        }
+    }, 1000, nullptr);
+    lv_obj_t* row = lv_obj_create(card);
+    lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_pad_all(row, 0, 0);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    const char* names[] = {"Dia", "Mes", "Ano", "Hora", "Minuto", "Fuso UTC"};
+    const int counts[] = {31, 12, 100, 24, 60, 105};
+    for (int i = 0; i < 6; ++i) {
+        lv_obj_t* col = lv_obj_create(row);
+        lv_obj_set_size(col, i == 5 ? 170 : 120, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(col, 0, 0);
+        lv_obj_set_style_pad_all(col, 0, 0);
+        lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+        lv_obj_remove_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_t* label = lv_label_create(col);
+        lv_label_set_text(label, names[i]);
+        lv_obj_set_style_text_color(label, lv_color_hex(C_HI), 0);
+        char options[1600] = {};
+        for (int j = 0; j < counts[i]; ++j) {
+            char item[24];
+            if (i == 5) {
+                int minutes = (j - 48) * 15;
+                int magnitude = minutes < 0 ? -minutes : minutes;
+                snprintf(item, sizeof(item), "%s%c%02d:%02d", j ? "\n" : "", minutes < 0 ? '-' : '+', magnitude / 60, magnitude % 60);
+            } else snprintf(item, sizeof(item), "%s%02d", j ? "\n" : "", j + (i < 2 ? 1 : i == 2 ? 2000 : 0));
+            strlcat(options, item, sizeof(options));
+        }
+        s_clock_fields[i] = lv_dropdown_create(col);
+        lv_obj_set_width(s_clock_fields[i], lv_pct(100));
+        lv_dropdown_set_options(s_clock_fields[i], options);
+    }
+    lv_obj_t* save = lv_button_create(card);
+    lv_obj_set_size(save, 210, 44);
+    lv_obj_add_event_cb(save, clock_save_cb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* label = lv_label_create(save);
+    lv_label_set_text(label, "Salvar data e hora");
+    lv_obj_center(label);
+    s_clock_status = lv_label_create(card);
+    lv_label_set_text(s_clock_status, "Ajuste manual, sem GPS ou internet. O Tab5 guarda a hora no RTC.");
+    lv_obj_set_style_text_color(s_clock_status, lv_color_hex(C_MID), 0);
+}
 
 static void brightness_cb(lv_event_t* e)
 {
@@ -217,6 +301,7 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     lv_obj_set_style_text_color(test_lbl, lv_color_hex(C_BG), 0);
     lv_obj_center(test_lbl);
 
+    make_clock_section(panel);
     settings_screen_refresh(panel);
     return panel;
 }
@@ -224,6 +309,18 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
 void settings_screen_refresh(lv_obj_t* panel)
 {
     (void)panel;
+    if (s_clock_fields[0]) {
+        struct tm local{};
+        if (!app_clock_local(&local)) { local.tm_year = 126; local.tm_mon = 0; local.tm_mday = 1; }
+        lv_dropdown_set_selected(s_clock_fields[0], local.tm_mday - 1);
+        lv_dropdown_set_selected(s_clock_fields[1], local.tm_mon);
+        lv_dropdown_set_selected(s_clock_fields[2], local.tm_year - 100);
+        lv_dropdown_set_selected(s_clock_fields[3], local.tm_hour);
+        lv_dropdown_set_selected(s_clock_fields[4], local.tm_min);
+        lv_dropdown_set_selected(s_clock_fields[5], app_clock_offset_minutes() / 15 + 48);
+        char text[40]; app_clock_format(text, sizeof(text), true);
+        lv_label_set_text(s_clock_now, text);
+    }
     const app_settings_t* s = settings_store_get();
 
     if (s_brightness_slider) {

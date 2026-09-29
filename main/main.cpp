@@ -36,6 +36,7 @@
 #include "tab5_audio.h"
 #include "app_commands.h"
 #include "channel_service.h"
+#include "app_clock.h"
 
 static UartTransport s_uart_transport;
 static MeshSession   s_mesh_session;
@@ -98,6 +99,7 @@ extern "C" void app_main(void)
     /* Restore saved brightness before the first frame is rendered. */
     lcd_set_brightness(settings_store_get()->brightness);
 
+    app_clock_init();
     ui_start();
 
     /* Physical Tab5 keyboard (optional accessory) — feeds the chat composer and

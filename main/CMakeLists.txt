@@ -7,6 +7,8 @@ idf_component_register(
         "ui/ui_shell.cpp"
         "ui/screens/settings_screen.cpp"
         "app/app_state.cpp"
+        "app/app_clock.cpp"
+        "app/clock_calendar.cpp"
         "app/settings.cpp"
         "mesh/mesh_proto.cpp"
         "ble/ble_transport.cpp"

@@ -17,6 +17,7 @@
 #include "esp_log.h"
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 
 static const char* TAG = "m5tab5.rtc.rx8130";
 
@@ -110,7 +111,8 @@ esp_err_t m5tab5_rtc_rx8130_init(i2c_bus_handle_t bus, m5tab5_rtc_rx8130_t* out_
     err |= rx8130_write8(out_rtc, RX8130_REG_CONTROL0, 0x00);
     // Clear the flag register to acknowledge any stale flags. /
     // 清空标志寄存器，以确认并清除遗留标志位�?
-    err |= rx8130_write8(out_rtc, RX8130_REG_FLAG, 0x00);
+    // Preserve VLF (bit 1): only setting a valid time may acknowledge it.
+    err |= rx8130_write8(out_rtc, RX8130_REG_FLAG, 0x02);
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "register initialisation failed (%s)", esp_err_to_name(err));
@@ -143,6 +145,11 @@ esp_err_t m5tab5_rtc_rx8130_get_datetime(const m5tab5_rtc_rx8130_t* rtc, m5tab5_
 {
     if (!rtc || !rtc->initialised || !out) return ESP_ERR_INVALID_ARG;
 
+    uint8_t flags = 0;
+    esp_err_t status = rx8130_read8(rtc, RX8130_REG_FLAG, &flags);
+    if (status != ESP_OK) return status;
+    if (flags & 0x02) return ESP_ERR_INVALID_STATE; // oscillator supply lost
+
     // Read all seven time/date registers in one burst: 0x10 to 0x16. / 一次性突发读�?7
     // 个时间日期寄存器�?x10 �?0x16�?
     uint8_t buf[7] = {};
@@ -152,6 +159,11 @@ esp_err_t m5tab5_rtc_rx8130_get_datetime(const m5tab5_rtc_rx8130_t* rtc, m5tab5_
         return err;
     }
 
+    if (!buf[3] || (buf[3] & (buf[3] - 1)) || buf[3] > 0x40) return ESP_ERR_INVALID_STATE;
+    for (int i : {0, 1, 2, 4, 5, 6}) {
+        uint8_t v = buf[i] & (i == 2 || i == 4 ? 0x3f : i == 5 ? 0x1f : i == 6 ? 0xff : 0x7f);
+        if ((v & 0x0f) > 9 || (v >> 4) > 9) return ESP_ERR_INVALID_STATE;
+    }
     out->time.seconds = (int8_t)bcd_to_byte(buf[0] & 0x7Fu);  // SEC bits 6-0 / 秒寄存器�?6 �?0 �?
     out->time.minutes = (int8_t)bcd_to_byte(buf[1] & 0x7Fu);  // MIN bits 6-0 / 分寄存器�?6 �?0 �?
     out->time.hours = (int8_t)bcd_to_byte(buf[2] & 0x3Fu);  // HOUR bits 5-0 (24h) / 时寄存器�?5 �?0 位（24 小时制）
@@ -193,6 +205,9 @@ esp_err_t m5tab5_rtc_rx8130_set_datetime(m5tab5_rtc_rx8130_t* rtc, const m5tab5_
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "set_datetime write failed (%s)", esp_err_to_name(err));
     }
+    // Clear only VLF after a complete date/time write; preserve IRQ flags.
+    if (err == ESP_OK && write_time && write_date)
+        err = rx8130_write8(rtc, RX8130_REG_FLAG, 0xBD);
     return err;
 }
 

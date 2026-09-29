@@ -64,9 +64,17 @@ void app_state_set_conn(conn_state_t state, const char* stage)
 void app_state_set_myinfo(uint32_t num, const char* long_name, const char* short_name)
 {
     lock();
+    if (g.s.my_num != num) { g.s.my_long[0] = 0; g.s.my_short[0] = 0; }
     g.s.my_num = num;
     if (long_name)  copy_str(g.s.my_long, sizeof(g.s.my_long), long_name);
     if (short_name) copy_str(g.s.my_short, sizeof(g.s.my_short), short_name);
+    for (uint32_t i = 0; i < g.node_n; ++i) {
+        if (g.nodes[i].num == num && g.nodes[i].has_user) {
+            copy_str(g.s.my_long, sizeof(g.s.my_long), g.nodes[i].long_name);
+            copy_str(g.s.my_short, sizeof(g.s.my_short), g.nodes[i].short_name);
+            break;
+        }
+    }
     unlock();
 }
 
@@ -111,6 +119,10 @@ void app_state_upsert_node(uint32_t num, const char* long_name, const char* shor
         copy_str(rec->long_name, sizeof(rec->long_name), long_name);
         copy_str(rec->short_name, sizeof(rec->short_name), short_name);
         rec->has_user = true;
+        if (num == g.s.my_num) {
+            copy_str(g.s.my_long, sizeof(g.s.my_long), rec->long_name);
+            copy_str(g.s.my_short, sizeof(g.s.my_short), rec->short_name);
+        }
     }
     if (rec->hops != hops || rec->hops_valid != hops_valid) meaningful = true;
     rec->hops       = hops;
@@ -190,7 +202,13 @@ uint32_t app_state_msg_total(void)
 
 uint32_t app_state_copy_messages(msg_rec_t* out, uint32_t max)
 {
+    return app_state_copy_messages_snapshot(out, max, nullptr);
+}
+
+uint32_t app_state_copy_messages_snapshot(msg_rec_t* out, uint32_t max, uint32_t* total)
+{
     lock();
+    if (total) *total = g.msg_total;
     uint32_t have = g.msg_total < APP_MAX_MSGS ? g.msg_total : APP_MAX_MSGS;
     uint32_t n    = have < max ? have : max;
     /* copy the n most recent, oldest first */

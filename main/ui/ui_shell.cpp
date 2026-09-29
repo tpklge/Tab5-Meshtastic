@@ -17,6 +17,8 @@
 #include "screens/channels_screen.h"
 #include "settings_store.h"
 #include "tab5_audio.h"
+#include "channel_service.h"
+#include "app_clock.h"
 
 #include "lvgl.h"
 #include "lvgl_port.h"
@@ -90,7 +92,14 @@ struct ShellState {
 
     /* chat tab */
     lv_obj_t* chat_list  = nullptr;   /* scrolling bubble area   */
-    lv_obj_t* chat_title = nullptr;
+    lv_obj_t* clock_label = nullptr;
+    lv_obj_t* chat_channels = nullptr;
+    uint8_t channel_map[8] = {};
+    uint8_t channel_count = 0;
+    int shown_channel = -1;
+    uint32_t channel_gen = UINT32_MAX;
+    char drafts[8][233] = {};
+    bool messages_initialized = false;
     lv_obj_t* chat_input = nullptr;   /* composer textarea       */
     lv_obj_t* chat_kb    = nullptr;   /* on-screen keyboard      */
     uint32_t  msg_seen   = 0;         /* bubbles already rendered */
@@ -171,6 +180,7 @@ void open_detail(uint32_t num);
 void close_detail(void);
 void populate_detail(void);
 void append_messages(void);
+void refresh_chat_channels(void);
 void radio_refresh(void);
 void rebuild_manager(void);
 void rebuild_discovery(void);
@@ -230,6 +240,7 @@ void set_tab(int i)
             lv_obj_set_style_bg_opa(S.nav[t], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
         }
     }
+    if (i == 1) { refresh_chat_channels(); append_messages(); }
     if (i == 2 && S.v_manager) radio_show(0);   /* land on the device manager */
     if (i == 3 && S.settings_panel) settings_screen_refresh(S.settings_panel);
 }
@@ -440,16 +451,15 @@ void sort_cb(lv_event_t* e)
 void refresh_cb(lv_timer_t*)
 {
     if (S.active == 4) channels_screen_refresh();
-    if (S.chat_title) {
-        char title[80]; snprintf(title, sizeof(title), "Enviar no canal %u (selecione em CANAIS)", settings_store_get()->sel_channel);
-        lv_label_set_text(S.chat_title, title);
-    }
+    refresh_chat_channels();
+    char clock_text[32]; app_clock_format(clock_text, sizeof(clock_text), false);
+    set_text(S.clock_label, clock_text);
     app_snapshot_t s;
     app_state_snapshot(&s);
 
     /* my-node badge + identity */
     set_text(S.my_badge, s.my_short[0] ? s.my_short : "--");
-    set_text(S.my_long, s.my_long[0] ? s.my_long : "No device");
+    set_text(S.my_long, s.my_long[0] ? s.my_long : (s.my_num ? "Radio sem nome" : "Aguardando radio"));
     char id[20];
     if (s.my_num) snprintf(id, sizeof(id), "!%08lx", (unsigned long)s.my_num);
     else          snprintf(id, sizeof(id), "not connected");
@@ -798,51 +808,120 @@ void add_bubble(lv_obj_t* parent, const msg_rec_t* m)
     }
 }
 
-/* Append only newly-arrived messages (FR-4.3: no whole-list rebuild on the
- * steady-state path) and scroll to the newest. */
-void append_messages(void)
+void refresh_chat_channels(void)
 {
-    uint32_t total = app_state_msg_total();
-    if (total == S.msg_seen || !S.chat_list) return;
-
-    static msg_rec_t buf[APP_MAX_MSGS];
-    uint32_t n         = app_state_copy_messages(buf, APP_MAX_MSGS);
-    uint32_t new_count = total - S.msg_seen;
-    if (new_count > n) {                          /* first load or dropped gap */
-        lv_obj_clean(S.chat_list);
-        for (uint32_t i = 0; i < n; i++) add_bubble(S.chat_list, &buf[i]);
-    } else {
-        for (uint32_t i = n - new_count; i < n; i++) add_bubble(S.chat_list, &buf[i]);
-    }
-    // Play notification for new incoming messages (not self-sent, not history load).
-    {
-        const app_settings_t* as = settings_store_get();
-        if (as->notif_en && new_count > 0) {
-            // Only notify for messages that arrived in steady state (not initial sync).
-            // Check: were we already in READY state for at least one refresh cycle?
-            app_snapshot_t snap; app_state_snapshot(&snap);
-            if (snap.state == CONN_READY) {
-                // Check if any new msg is received (not self)
-                for (uint32_t i = n - new_count; i < n; i++) {
-                    if (!buf[i].is_self) {
-                        tab5_audio_beep((audio_pattern_t)as->notif_pat);
-                        break;
-                    }
-                }
+    if (!S.chat_channels) return;
+    channel_snapshot_t cs; channel_service_snapshot(&cs);
+    const uint8_t selected = settings_store_get()->sel_channel;
+    if (S.channel_gen != cs.generation) {
+        char options[256] = {};
+        S.channel_count = 0;
+        for (int i = 0; i < 8; ++i) {
+            if (!cs.known[i] || cs.channels[i].role == meshtastic_Channel_Role_DISABLED) continue;
+            const char* name = cs.channels[i].settings.name;
+            static const char* presets[] = {"LongFast", "LongSlow", "VeryLongSlow", "MediumSlow", "MediumFast",
+                "ShortSlow", "ShortFast", "LongModerate", "ShortTurbo", "LongTurbo", "LiteFast", "LiteSlow", "NarrowFast", "NarrowSlow"};
+            if (!name[0]) {
+                unsigned preset = (unsigned)cs.lora.modem_preset;
+                name = cs.has_lora && cs.lora.use_preset && preset < sizeof(presets)/sizeof(presets[0]) ? presets[preset] : "Sem nome";
             }
+            char item[48];
+            snprintf(item, sizeof(item), "%s%d: %s", S.channel_count ? "\n" : "", i,
+                     name);
+            strlcat(options, item, sizeof(options));
+            S.channel_map[S.channel_count++] = i;
+        }
+        lv_dropdown_set_options(S.chat_channels, S.channel_count ? options : "Aguardando canais");
+        if (S.channel_count) lv_obj_remove_state(S.chat_channels, LV_STATE_DISABLED);
+        else lv_obj_add_state(S.chat_channels, LV_STATE_DISABLED);
+        S.channel_gen = cs.generation;
+    }
+    bool available = false;
+    for (int i = 0; i < S.channel_count; ++i) {
+        if (S.channel_map[i] == selected) {
+            lv_dropdown_set_selected(S.chat_channels, i);
+            available = true;
         }
     }
+    if (!available && S.channel_count) {
+        settings_store_set_channel(S.channel_map[0]);
+        lv_dropdown_set_selected(S.chat_channels, 0);
+    }
+}
 
+void append_messages(void)
+{
+    if (!S.chat_list) return;
+    uint8_t channel = settings_store_get()->sel_channel;
+    if (channel >= 8) channel = 0;
+    bool switched = S.shown_channel != channel;
+    uint32_t total = app_state_msg_total();
+    if (!switched && total == S.msg_seen && S.messages_initialized) return;
+    static msg_rec_t buf[APP_MAX_MSGS];
+    uint32_t n = app_state_copy_messages_snapshot(buf, APP_MAX_MSGS, &total);
+    uint32_t first = total - n;
+    uint32_t start = S.msg_seen > first ? S.msg_seen - first : 0;
+    if (start > n) start = n;
+    bool follow = switched || !S.messages_initialized || lv_obj_get_scroll_bottom(S.chat_list) < 40;
+    bool incoming = false, self = false;
+    for (uint32_t i = start; i < n; ++i) {
+        incoming |= !buf[i].is_self;
+        self |= buf[i].is_self && buf[i].channel == channel;
+    }
+    if (S.messages_initialized && incoming && settings_store_get()->notif_en) {
+        app_snapshot_t snap; app_state_snapshot(&snap);
+        if (snap.state == CONN_READY) tab5_audio_beep((audio_pattern_t)settings_store_get()->notif_pat);
+    }
+    if (switched) {
+        if (S.shown_channel >= 0 && S.shown_channel < 8)
+            strlcpy(S.drafts[S.shown_channel], lv_textarea_get_text(S.chat_input), sizeof(S.drafts[0]));
+        lv_textarea_set_text(S.chat_input, S.drafts[channel]);
+        S.shown_channel = channel;
+    }
+    if (switched || !S.messages_initialized || S.msg_seen < first) {
+        lv_obj_clean(S.chat_list);
+        start = 0;
+    }
+    // Trim expired rows to match the bounded history, preserving the viewport.
+    int32_t removed_height = 0;
+    while (lv_obj_get_child_count(S.chat_list)) {
+        lv_obj_t* row = lv_obj_get_child(S.chat_list, 0);
+        uint32_t seq = (uint32_t)(uintptr_t)lv_obj_get_user_data(row) - 1;
+        if (seq >= first) break;
+        removed_height += lv_obj_get_height(row) + 10;
+        lv_obj_delete(row);
+    }
+    int32_t old_y = lv_obj_get_scroll_y(S.chat_list);
+    for (uint32_t i = start; i < n; ++i) {
+        if (buf[i].channel != channel) continue;
+        add_bubble(S.chat_list, &buf[i]);
+        lv_obj_set_user_data(lv_obj_get_child(S.chat_list, -1), (void*)(uintptr_t)(first + i + 1));
+    }
+    lv_obj_update_layout(S.chat_list);
+    if (follow || self) lv_obj_scroll_to_y(S.chat_list, LV_COORD_MAX, LV_ANIM_OFF);
+    else if (removed_height) lv_obj_scroll_to_y(S.chat_list, old_y > removed_height ? old_y - removed_height : 0, LV_ANIM_OFF);
     S.msg_seen = total;
+    S.messages_initialized = true;
+}
 
-    uint32_t cnt = lv_obj_get_child_count(S.chat_list);
-    if (cnt) lv_obj_scroll_to_view(lv_obj_get_child(S.chat_list, cnt - 1), LV_ANIM_OFF);
+void chat_channel_cb(lv_event_t*)
+{
+    uint32_t i = lv_dropdown_get_selected(S.chat_channels);
+    if (i < S.channel_count) {
+        settings_store_set_channel(S.channel_map[i]);
+        append_messages();
+    }
 }
 
 void do_send(void)
 {
     const char* t = lv_textarea_get_text(S.chat_input);
     if (!t || !t[0]) return;
+    app_snapshot_t snap; app_state_snapshot(&snap);
+    if (snap.state != CONN_READY) return; // Keep the draft while disconnected.
+    channel_snapshot_t channels; channel_service_snapshot(&channels);
+    uint8_t selected = settings_store_get()->sel_channel;
+    if (selected >= 8 || !channels.known[selected] || channels.channels[selected].role == meshtastic_Channel_Role_DISABLED) return;
     app_send_text(t);
     lv_textarea_set_text(S.chat_input, "");
 }
@@ -878,13 +957,21 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
     lv_obj_t* panel = box(parent, lv_pct(100), lv_pct(100));
     flex_col(panel);
 
-    lv_obj_t* hdr = box(panel, lv_pct(100), 44);
+    lv_obj_t* hdr = box(panel, lv_pct(100), 60);
     flex_row(hdr);
     lv_obj_set_style_pad_hor(hdr, 20, 0);
-    lv_obj_set_style_pad_column(hdr, 10, 0);
+    lv_obj_set_style_pad_column(hdr, 14, 0);
     hairline_side(hdr, LV_BORDER_SIDE_BOTTOM);
-    S.chat_title = label(hdr, "Canal 0", FONT_ROW, C_HI);
-    label(hdr, "broadcast", FONT_META, C_DIM);
+    label(hdr, "Conversa", FONT_ROW, C_HI);
+    S.chat_channels = lv_dropdown_create(hdr);
+    lv_obj_set_width(S.chat_channels, 300);
+    lv_obj_add_event_cb(S.chat_channels, chat_channel_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_t* latest = lv_button_create(hdr);
+    lv_obj_center(label(latest, "Ultimas mensagens", FONT_META, C_HI));
+    lv_obj_set_size(latest, 210, 40);
+    lv_obj_add_event_cb(latest, [](lv_event_t*) {
+        lv_obj_scroll_to_y(S.chat_list, LV_COORD_MAX, LV_ANIM_OFF);
+    }, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t* list = box(panel, lv_pct(100), 0);
     lv_obj_set_flex_grow(list, 1);
@@ -892,7 +979,9 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
     lv_obj_set_style_pad_hor(list, 16, 0);
     lv_obj_set_style_pad_ver(list, 12, 0);
     lv_obj_set_style_pad_row(list, 10, 0);
-    lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_width(list, 8, LV_PART_SCROLLBAR);
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
     S.chat_list = list;
 
@@ -1353,7 +1442,7 @@ void build_shell(void)
     lv_obj_t* me = box(sb, 0, 40);
     lv_obj_set_width(me, LV_SIZE_CONTENT);
     flex_col(me);
-    S.my_long = label(me, "No device", FONT_META, C_HI);
+    S.my_long = label(me, "Aguardando radio", FONT_META, C_HI);
     S.my_id   = label(me, "not connected", FONT_META, C_DIM);
 
     lv_obj_t* spacer = box(sb, 0, 1);
@@ -1376,7 +1465,7 @@ void build_shell(void)
     label(cnt, LV_SYMBOL_WIFI, FONT_META, C_MID);
     S.count_lbl = label(cnt, "0", FONT_META, C_MID);
 
-    label(sb, "--:--", FONT_BODY, C_HI);
+    S.clock_label = label(sb, "--:--", FONT_BODY, C_HI);
 
     /* content area + panels */
     lv_obj_t* content = box(col, lv_pct(100), 0);

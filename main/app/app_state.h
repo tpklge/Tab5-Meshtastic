@@ -138,6 +138,7 @@ uint32_t app_state_msg_total(void);
 /* Copy up to `max` of the most recent messages into out[] (oldest first).
  * Returns the count copied. */
 uint32_t app_state_copy_messages(msg_rec_t* out, uint32_t max);
+uint32_t app_state_copy_messages_snapshot(msg_rec_t* out, uint32_t max, uint32_t* total);
 
 /* ---- discovery scan results (PRD §6.1 FR-1.2) ---- */
 #define APP_MAX_SCAN 24
