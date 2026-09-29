@@ -80,7 +80,9 @@ esp_err_t app_lcd_lvgl_init(m5::tab5::m5tab5_component& board)
         return ESP_FAIL;
     }
 
-    /* Register touch if available. No touch rotation needed — PPA handles it. */
+    /* Register touch. PPA handles display rotation but does NOT set LVGL's
+     * display rotation, so the touch driver can't infer it. We must explicitly
+     * set the touch rotation to match the PPA rotation (90°). */
     esp_lcd_touch_handle_t tp = board.touch_panel();
     if (tp) {
         const lvgl_touch_cfg_t touch_cfg = {
@@ -88,7 +90,10 @@ esp_err_t app_lcd_lvgl_init(m5::tab5::m5tab5_component& board)
             .handle = tp,
             .scale  = {.x = 1.0f, .y = 1.0f},
         };
-        lvgl_port_add_touch(&touch_cfg);
+        lv_indev_t* touch_indev = lvgl_port_add_touch(&touch_cfg);
+        if (touch_indev) {
+            lvgl_port_set_touch_rotation(touch_indev, LV_DISPLAY_ROTATION_90);
+        }
     }
 
     ESP_LOGI(TAG, "LVGL init: panel %" PRIu32 "x%" PRIu32 " + PPA 90deg -> 1280x720 landscape",
