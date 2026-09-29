@@ -8,6 +8,8 @@ idf_component_register(
         "ui/screens/settings_screen.cpp"
         "app/app_state.cpp"
         "app/app_clock.cpp"
+        "network/wifi_service.cpp"
+        "ui/screens/wifi_settings.cpp"
         "app/clock_calendar.cpp"
         "app/settings.cpp"
         "mesh/mesh_proto.cpp"
@@ -36,6 +38,7 @@ idf_component_register(
         "transport"
         "protocol"
         "storage"
+        "network"
         "../components/m5_tab5_component/src/drivers"
     # esp_driver_sdmmc: esp_hosted.h transitively includes driver/sdmmc_host.h
     # but esp_hosted doesn't propagate it, so we pull it in here.
@@ -45,6 +48,10 @@ idf_component_register(
         quirc
         mbedtls
         nvs_flash
+        esp_wifi
+        esp_netif
+        esp_event
+        lwip
         bt
         esp_hosted
         esp_wifi_remote

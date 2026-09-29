@@ -37,6 +37,7 @@
 #include "app_commands.h"
 #include "channel_service.h"
 #include "app_clock.h"
+#include "wifi_service.h"
 
 static UartTransport s_uart_transport;
 static MeshSession   s_mesh_session;
@@ -100,6 +101,7 @@ extern "C" void app_main(void)
     lcd_set_brightness(settings_store_get()->brightness);
 
     app_clock_init();
+    ESP_ERROR_CHECK(wifi_service_init());
     ui_start();
 
     /* Physical Tab5 keyboard (optional accessory) — feeds the chat composer and
@@ -133,6 +135,7 @@ extern "C" void app_main(void)
         ESP_ERROR_CHECK(s_mesh_session.start());
     }
 
+    ESP_ERROR_CHECK(wifi_service_start());
     ESP_LOGI(TAG, "init done; transport=%d", transport);
 }
 

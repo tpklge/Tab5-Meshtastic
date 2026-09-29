@@ -7,6 +7,8 @@
 void app_clock_init();
 bool app_clock_local(struct tm* out);
 int app_clock_offset_minutes();
+esp_err_t app_clock_sync(time_t utc);
+esp_err_t app_clock_set_offset(int offset_minutes);
 esp_err_t app_clock_set(struct tm local, int offset_minutes);
 void app_clock_format(char* out, size_t capacity, bool date);
 // Pure calendar conversion, rejects normalized/invalid dates.

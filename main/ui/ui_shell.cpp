@@ -14,6 +14,7 @@
 #include "app_commands.h"
 #include "ble_transport.h"
 #include "screens/settings_screen.h"
+#include "screens/wifi_settings.h"
 #include "screens/channels_screen.h"
 #include "settings_store.h"
 #include "tab5_audio.h"
@@ -225,6 +226,7 @@ void set_color(lv_obj_t* l, uint32_t c)
 void set_tab(int i)
 {
     if (i < 0 || i >= NUM_TABS) return;
+    if (S.active == 3 && i != 3) wifi_settings_leave();
     if (S.active == 4 && i != 4) channels_screen_leave();
     close_detail();   /* leaving to another tab dismisses the node detail */
     if (S.chat_kb) lv_obj_add_flag(S.chat_kb, LV_OBJ_FLAG_HIDDEN);   /* hide OSK */
@@ -451,6 +453,7 @@ void sort_cb(lv_event_t* e)
 void refresh_cb(lv_timer_t*)
 {
     if (S.active == 4) channels_screen_refresh();
+    if (S.active == 3) wifi_settings_refresh();
     refresh_chat_channels();
     char clock_text[32]; app_clock_format(clock_text, sizeof(clock_text), false);
     set_text(S.clock_label, clock_text);
@@ -979,7 +982,8 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
     lv_obj_set_style_pad_hor(list, 16, 0);
     lv_obj_set_style_pad_ver(list, 12, 0);
     lv_obj_set_style_pad_row(list, 10, 0);
-    lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(list, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_width(list, 8, LV_PART_SCROLLBAR);
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
@@ -1563,7 +1567,9 @@ void ui_kbd_feed(const char* str, unsigned char len, unsigned char modifier)
 
     if (!lvgl_port_lock(100)) return;   /* drop input rather than block the kbd task */
 
-    if (S.active == 4) {
+    if (S.active == 3) {
+        wifi_settings_key(act == KBD_TEXT ? text : nullptr, act == KBD_BACKSPACE, act == KBD_SUBMIT);
+    } else if (S.active == 4) {
         channels_screen_key(act == KBD_TEXT ? text : nullptr, act == KBD_BACKSPACE, act == KBD_SUBMIT);
     } else if (S.active == 2 && S.radio_view == 2) {           /* PIN entry */
         size_t plen = strlen(S.pin_buf);

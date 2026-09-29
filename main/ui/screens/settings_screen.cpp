@@ -3,6 +3,8 @@
 #include "lcd_tools.h"
 #include "tab5_audio.h"
 #include "app_clock.h"
+#include "wifi_settings.h"
+#include <cstring>
 #include "../theme.h"
 
 static lv_obj_t* s_brightness_slider = nullptr;
@@ -90,6 +92,14 @@ static void make_clock_section(lv_obj_t* panel)
     lv_obj_t* label = lv_label_create(save);
     lv_label_set_text(label, "Salvar data e hora");
     lv_obj_center(label);
+    lv_obj_t* timezone = lv_button_create(card);
+    lv_obj_set_size(timezone, 260, 44);
+    lv_obj_add_event_cb(timezone, [](lv_event_t*) {
+        int offset = ((int)lv_dropdown_get_selected(s_clock_fields[5]) - 48) * 15;
+        lv_label_set_text(s_clock_status, app_clock_set_offset(offset) == ESP_OK ?
+            "Fuso salvo. A hora UTC foi mantida." : "Falha ao salvar o fuso.");
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* tz_label = lv_label_create(timezone); lv_label_set_text(tz_label, "Aplicar somente o fuso"); lv_obj_center(tz_label);
     s_clock_status = lv_label_create(card);
     lv_label_set_text(s_clock_status, "Ajuste manual, sem GPS ou internet. O Tab5 guarda a hora no RTC.");
     lv_obj_set_style_text_color(s_clock_status, lv_color_hex(C_MID), 0);
@@ -301,6 +311,7 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     lv_obj_set_style_text_color(test_lbl, lv_color_hex(C_BG), 0);
     lv_obj_center(test_lbl);
 
+    wifi_settings_make(panel);
     make_clock_section(panel);
     settings_screen_refresh(panel);
     return panel;

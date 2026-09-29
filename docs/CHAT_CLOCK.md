@@ -19,3 +19,15 @@ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk c++ -std=c++17 -
 Cobre ordem dos eventos de identidade, snapshots concorrentes do historico, indices de canais, anos bissextos, fusos e limites do RTC. Validar no Tab5: arrastar uma conversa longa, trocar canais, enviar em ambos, salvar data/hora e reiniciar pela bateria. Nenhum teste instala o firmware.
 
 Referencias: [LVGL 9.5 flags](https://lvgl.io/docs/open/9.5/common-widget-features/flags), [RTC RX8130 no exemplo oficial Tab5](https://github.com/m5stack/M5Tab5-UserDemo/tree/b4e356bc491ca070d54004718dad789c07d5fc93/platforms/tab5/main/hal/utils/rx8130). O driver local preserva VLF (bit 1) durante a inicializacao, rejeita datas invalidas e limpa VLF apenas apos gravar a data/hora completa.
+
+## Wi-Fi e hora da internet
+
+Em **SET > WI-FI**, use **Buscar redes**, selecione uma rede e abra **Configurar rede**. Informe a senha e toque em **Conectar e salvar**. Redes ocultas podem ser digitadas pelo SSID; a senha fica oculta e ha suporte ao teclado fisico e ao teclado na tela. O menu mostra o IP quando conectado.
+
+A ultima rede conectada e salva na NVS e reconectada ao iniciar. **Desligar Wi-Fi** desativa a reconexao automatica mantendo a credencial; **Conectar rede salva** reativa. **Esquecer rede** pede confirmacao, remove a credencial e desliga o Wi-Fi. O menu usa o C6 do Tab5 em 2.4 GHz, com redes abertas ou WPA2/WPA3 pessoais (nao inclui autenticacao empresarial ou portal cativo).
+
+Ao obter IP, a aplicacao consulta `pool.ntp.org` por SNTP. **Sincronizar hora pela internet** repete a consulta. A operacao tem limite de 20 segundos e informa falha de acesso/NTP; ter IP nao garante acesso a internet. A hora recebida e salva no RTC, quando disponivel, mantendo o fuso escolhido. **Aplicar somente o fuso** altera o fuso sem sobrescrever a hora sincronizada. O ajuste manual continua disponivel.
+
+Operacoes de rede rodam em um worker; callbacks de Wi-Fi nao chamam LVGL. Wi-Fi e BLE compartilham a inicializacao idempotente de esp-hosted; desligar Wi-Fi nao desliga o transporte BLE. Validar em hardware: busca, senha incorreta, conexao e IP, NTP, reinicializacao, desligar/reconectar/esquecer e BLE/Wi-Fi simultaneos se usar BLE.
+
+Referencia: [Wi-Fi ESP-IDF 5.4](https://docs.espressif.com/projects/esp-idf/en/v5.4/esp32/api-guides/wifi.html); API SNTP conferida no `esp_netif_sntp.h` da instalacao ESP-IDF 5.4.4.
