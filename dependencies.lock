@@ -6,7 +6,7 @@ dependencies:
       require: private
       version: '>=4.1'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.1.1
   espressif/eppp_link:
@@ -20,7 +20,7 @@ dependencies:
       require: private
       version: '>=5.2'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.1.5
   espressif/esp_hosted:
@@ -64,7 +64,7 @@ dependencies:
       require: private
       version: '>=5.0'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.1.2
   espressif/esp_wifi_remote:
@@ -109,7 +109,7 @@ dependencies:
     component_hash: 184e532558c1c45fefed631f3e235423d22582aafb4630f3e8885c35281a49ae
     dependencies: []
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 9.5.0
   m5_tab5_component:
@@ -119,13 +119,17 @@ dependencies:
       type: local
     version: 0.1.0
 direct_dependencies:
+- espressif/cmake_utilities
+- espressif/eppp_link
 - espressif/esp_hosted
 - espressif/esp_lcd_touch
 - espressif/esp_lvgl_port
+- espressif/esp_serial_slave_link
 - espressif/esp_wifi_remote
 - espressif/i2c_bus
 - idf
+- lvgl/lvgl
 - m5_tab5_component
-manifest_hash: 36e0039a926a8b7c4de1feed84a9ef9bf68cf26c2dc3c6c2d683dfc62480065b
+manifest_hash: 0b68a57b5d5676705b6a53b046b078845d8d1b4acaf2d34ad33492d07cd14eab
 target: esp32p4
 version: 2.0.0
