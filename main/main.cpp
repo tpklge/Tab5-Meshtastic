@@ -82,13 +82,18 @@ extern "C" void app_main(void)
     tab5_audio_init();
     tab5_audio_set_volume(settings_store_get()->notif_vol);
 
-    /* P4<->C6 transport, then the NimBLE host, then our BLE transport. */
+    /* P4<->C6 transport, then the NimBLE host, then our BLE transport.
+     * Stage labels are shown on-screen (status chip) so we can see where
+     * a cold-boot hangs without attaching serial (which resets the P4). */
+    app_state_set_conn(CONN_BOOT, "ESP_HOST");
     ESP_LOGI(TAG, "esp_hosted_init()");
     ESP_ERROR_CHECK(esp_hosted_init());
 
+    app_state_set_conn(CONN_BOOT, "NIMBLE");
     ret = nimble_port_init();
     if (ret != ESP_OK) { ESP_LOGE(TAG, "nimble_port_init: %s", esp_err_to_name(ret)); return; }
 
+    app_state_set_conn(CONN_BOOT, "BLE START");
     ble_transport_start();
 
     ESP_LOGI(TAG, "init done; transport=%d", settings_store_get()->transport);
