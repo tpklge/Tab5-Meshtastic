@@ -99,14 +99,22 @@ extern "C" void app_main(void)
      * the transport is still coming up.  Poll until TX-ready (max 10 s). */
     app_state_set_conn(CONN_BOOT, "WAIT C6");
     {
-        const int kMaxMs = 10000;
-        for (int elapsed = 0; !is_transport_tx_ready() && elapsed < kMaxMs; elapsed += 50) {
+        const int kMaxMs   = 30000;
+        const int kLogEvery = 5000;
+        int elapsed = 0;
+        int next_log = kLogEvery;
+        while (!is_transport_tx_ready() && elapsed < kMaxMs) {
             vTaskDelay(pdMS_TO_TICKS(50));
+            elapsed += 50;
+            if (elapsed >= next_log) {
+                ESP_LOGI(TAG, "SDIO not TX-ready yet (%d ms)…", elapsed);
+                next_log += kLogEvery;
+            }
         }
         if (!is_transport_tx_ready()) {
             ESP_LOGE(TAG, "SDIO transport not TX-ready after %d ms — continuing anyway", kMaxMs);
         } else {
-            ESP_LOGI(TAG, "SDIO transport TX-ready");
+            ESP_LOGI(TAG, "SDIO transport TX-ready after %d ms", elapsed);
         }
     }
 
