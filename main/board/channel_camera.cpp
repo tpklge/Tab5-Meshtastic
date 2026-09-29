@@ -89,7 +89,7 @@ void scan(void*) {
             if (ioctl(fd, VIDIOC_QUERYBUF, &buf)) { mapped = false; break; }
             buffers[i] = static_cast<uint8_t*>(mmap(nullptr, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, buf.m.offset));
             lengths[i] = buf.length;
-            if (!buffers[i] || buffers[i] == MAP_FAILED || buf.length < stride * height || ioctl(fd, VIDIOC_QBUF, &buf)) { mapped = false; break; }
+            if (!buffers[i] || buf.length < stride * height || ioctl(fd, VIDIOC_QBUF, &buf)) { mapped = false; break; }
         }
         if (!mapped || ioctl(fd, VIDIOC_STREAMON, &type)) { report("Falha ao iniciar captura."); break; }
         streaming = true;
@@ -143,7 +143,7 @@ void scan(void*) {
         if (esp_timer_get_time() - start >= 60000000LL) report("Tempo de leitura encerrado. Tente novamente.");
     } while (false);
     if (streaming) ioctl(fd, VIDIOC_STREAMOFF, &type);
-    for (unsigned i = 0; i < 2; ++i) if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], lengths[i]);
+    for (unsigned i = 0; i < 2; ++i) if (buffers[i]) munmap(buffers[i], lengths[i]);
     if (fd >= 0) close(fd);
     if (decoder) quirc_destroy(decoder);
     delete code; delete decoded;

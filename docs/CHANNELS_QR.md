@@ -56,7 +56,8 @@ confirmados permanecem gravados. Releia o rádio para conferir antes de repetir.
   commit `b4e356bc491ca070d54004718dad789c07d5fc93`: componentes `esp_video` 0.7.0,
   `esp_cam_sensor` 0.7.1, `esp_sccb_intf` 0.0.4, `esp_ipa` 0.1.0, com licenças.
   O driver SC202CS desse demo contém a sequência SC2356 do Tab5, 1280x720 RAW8.
-  Alterações locais: H264 opcional no CMake/manifest; espera de captura de vídeo
+  Alterações locais: H264 opcional no CMake/manifest; cmake_utilities permite
+  a versão 1.1.1 já usada pelo projeto; espera de captura de vídeo
   limitada a 250 ms para cancelamento. Captura de metadados ISP mantém espera.
 - [quirc](https://github.com/dlbeer/quirc/tree/927d680904dc95fdff4cd9d022eb374b438ff8f2),
   commit `927d680904dc95fdff4cd9d022eb374b438ff8f2`, licença ISC: reconhecimento QR.

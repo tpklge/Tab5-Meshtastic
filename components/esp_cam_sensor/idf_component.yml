@@ -9,4 +9,4 @@ dependencies:
     idf: ">=5.3"
     # esp_sccb_intf:
     #   version: ">=0.0.2"
-    cmake_utilities: "0.*"
+    cmake_utilities: ">=0.5.3"

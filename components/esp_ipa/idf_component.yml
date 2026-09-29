@@ -1,5 +1,5 @@
 dependencies:
-  cmake_utilities: 0.*
+  cmake_utilities: '>=0.5.3'
   idf: '>=5.3'
 description: Image process algorithms pipeline system for ISP.
 issues: https://github.com/espressif/esp-video-components/issues

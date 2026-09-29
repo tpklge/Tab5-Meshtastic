@@ -1,5 +1,5 @@
 dependencies:
-  cmake_utilities: 0.*
+  cmake_utilities: '>=0.5.3'
   # esp_cam_sensor: 0.*
   # esp_ipa: 0.*
   idf: '>=5.3'

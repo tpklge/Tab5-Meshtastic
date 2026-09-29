@@ -114,6 +114,9 @@ void MeshSession::on_fromradio(const uint8_t* data, size_t len)
     }
 
     int64_t now_us = esp_timer_get_time();
+    // A large config/node stream can take longer than the timeout; only retry
+    // after a lack of progress, not while valid configuration is arriving.
+    if (m_conn == TRANSPORT_CONN_SYNCING) m_config_sent_us = now_us;
 
     switch (ev.kind) {
     case MESH_EV_MY_INFO:
