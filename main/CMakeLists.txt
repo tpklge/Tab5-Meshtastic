@@ -8,6 +8,15 @@ idf_component_register(
         "app/settings.cpp"
         "mesh/mesh_proto.cpp"
         "ble/ble_transport.cpp"
+        # Transport abstraction layer
+        "transport/serial_framer.cpp"
+        "transport/uart_transport.cpp"
+        # Protocol session
+        "protocol/mesh_session.cpp"
+        # Persistent storage
+        "storage/app_storage.cpp"
+        "storage/message_store.cpp"
+        "storage/settings_store.cpp"
     INCLUDE_DIRS
         "."
         "board"
@@ -15,6 +24,9 @@ idf_component_register(
         "app"
         "mesh"
         "ble"
+        "transport"
+        "protocol"
+        "storage"
     # esp_driver_sdmmc: esp_hosted.h transitively includes driver/sdmmc_host.h
     # but esp_hosted doesn't propagate it, so we pull it in here.
     REQUIRES
@@ -23,7 +35,10 @@ idf_component_register(
         esp_hosted
         esp_wifi_remote
         esp_driver_sdmmc
+        esp_driver_uart
         esp_timer
+        spiffs
+        esp_crc
         m5_tab5_component
         m5_tab5_keyboard_component
         meshtastic_protos

@@ -28,6 +28,8 @@
 #include "app_state.h"
 #include "settings.h"
 #include "ble_transport.h"
+#include "app_storage.h"
+#include "settings_store.h"
 
 static const char* TAG = "tab5-mesh-v2";
 
@@ -47,7 +49,11 @@ extern "C" void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    settings_init();   /* load saved device(s) before the transport starts */
+    settings_init();   /* load saved BLE device(s) before transport starts */
+
+    /* Persistent SPIFFS storage (messages, settings). Non-fatal if absent. */
+    app_storage_init();
+    settings_store_init();
 
     /* Board bring-up, then power the C6 coprocessor BEFORE esp_hosted. */
     m5::tab5::m5tab5_component_config_t board_cfg = {};
@@ -73,5 +79,5 @@ extern "C" void app_main(void)
 
     ble_transport_start();
 
-    ESP_LOGI(TAG, "M1 init done; waiting for BLE sync...");
+    ESP_LOGI(TAG, "init done; transport=%d", settings_store_get()->transport);
 }
