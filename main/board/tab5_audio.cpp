@@ -1,24 +1,9 @@
 /*
  * ES8388 audio for M5Stack Tab5.
  *
- * Hardware:
- *   I2S: MCLK=30, BCLK=27, WS=29, DOUT=26 (from m5tab5_pinmap.h)
- *   ES8388 on system I2C bus (SDA=31, SCL=32, addr=0x10) — BSP owns this bus
- *   SPK_EN: PI4IOE5V6408 (addr=0x43, pin1) — no public BSP API exposed yet
- *
- * LIMITATION: The m5_tab5_component BSP does not currently expose:
- *   - A handle to the SYS I2C bus (needed for ES8388 register writes)
- *   - A method to toggle SPK_EN on the PI4IOE5V6408 expander
- *
- * Until those are exposed, this module uses a NEW i2c_master_bus for the codec
- * on the SAME pins. This works only if the BSP does not claim an exclusive lock
- * on those pins. If it does, build with CONFIG_TAB5_AUDIO_DISABLED=y to skip.
- *
- * The proper fix is to add to m5_tab5_component:
- *   esp_err_t spk_enable(bool en);
- *   i2c_master_bus_handle_t get_sys_i2c_bus();
- *
- * Audio runs in a dedicated task — never blocks LVGL, BLE or UART.
+ * Uses the SYS I2C bus owned by the BSP (via m5tab5_get_sys_i2c_master_bus_handle)
+ * — does NOT create a second I2C master. SPK_EN (PI4IOE5V6408 addr=0x43 pin P1)
+ * is set HIGH via I2C to the expander before playing.
  */
 #include "tab5_audio.h"
 #include "m5tab5_pinmap.h"
@@ -32,12 +17,17 @@
 #include <math.h>
 #include <string.h>
 
+/* BSP internal: exposes the i2c_master_bus_handle_t it already owns. */
+extern "C" i2c_master_bus_handle_t m5tab5_get_sys_i2c_master_bus_handle(void);
+
 static const char* TAG = "tab5_audio";
 
-// ES8388 I2C address
-#define ES8388_I2C_ADDR  0x10
+#define ES8388_I2C_ADDR   0x10
+#define PI4IO_ADDR_LOW    0x43   /* ADDR_LOW expander: has SPK_EN on P1 */
+#define PI4IO_REG_OUT     0x05   /* M5TAB5_PI4IO_REG_OUT_STATE */
+#define PI4IO_OUT_NORMAL  0x74   /* LCD_RST=H TP_RST=H CAM_RST=H EXT5V_EN=H SPK_EN=L */
+#define PI4IO_OUT_SPK_ON  0x76   /* same + SPK_EN=H (bit1) */
 
-// I2S config
 #define BEEP_SAMPLE_RATE 16000
 #define BEEP_FREQ_HZ     1000
 #define BEEP_AMPLITUDE   8000
@@ -48,42 +38,45 @@ static bool             s_available  = false;
 static uint8_t          s_volume     = 70;
 static i2s_chan_handle_t s_tx_chan    = nullptr;
 static QueueHandle_t    s_queue      = nullptr;
-static i2c_master_bus_handle_t s_i2c_bus = nullptr;
-static i2c_master_dev_handle_t s_codec   = nullptr;
+static i2c_master_dev_handle_t s_codec    = nullptr;
+static i2c_master_dev_handle_t s_extio    = nullptr;
 
-static esp_err_t codec_write(uint8_t reg, uint8_t val)
+static esp_err_t i2c_write_reg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t val)
 {
-    if (!s_codec) return ESP_ERR_INVALID_STATE;
     uint8_t buf[2] = {reg, val};
-    return i2c_master_transmit(s_codec, buf, 2, pdMS_TO_TICKS(20));
+    return i2c_master_transmit(dev, buf, 2, pdMS_TO_TICKS(20));
+}
+
+static esp_err_t spk_enable(bool on)
+{
+    if (!s_extio) return ESP_ERR_INVALID_STATE;
+    return i2c_write_reg(s_extio, PI4IO_REG_OUT, on ? PI4IO_OUT_SPK_ON : PI4IO_OUT_NORMAL);
 }
 
 static esp_err_t codec_init(void)
 {
-    // Minimal ES8388 init for DAC playback (16-bit I2S, stereo).
-    // Full register map: https://github.com/espressif/esp-idf-lib/blob/master/components/es8388/
     static const uint8_t init_seq[][2] = {
         {0x00, 0x80}, // Chip reset
         {0x00, 0x00},
-        {0x01, 0x58}, // Power management 1: VMID/VREF on, ADC/DAC powered
-        {0x02, 0xF3}, // Power management 2: power on DAC L+R, ADC L+R
-        {0x03, 0x00}, // ADC input selection
-        {0x04, 0x0C}, // ADC control: LIN1/RIN1
-        {0x08, 0x00}, // Master clock divider
-        {0x09, 0x00}, // ADC control 5
-        {0x0A, 0x00}, // ADC control 6
-        {0x0B, 0x02}, // DAC control 1: 16-bit I2S format
-        {0x0C, 0x00}, // DAC control 2
-        {0x26, 0x00}, // DAC control 23: volume
-        {0x27, 0x00}, // LOUT1 volume: 0dB
-        {0x2A, 0x00}, // ROUT1 volume: 0dB
-        {0x2E, 0x1E}, // LOUT2 volume (headphone): 0dB
-        {0x2F, 0x1E}, // ROUT2 volume
-        {0x30, 0x07}, // Enable LOUT1/ROUT1 and LOUT2/ROUT2
-        {0x38, 0x09}, // I2S clock: MCLK / 256 = 16kHz * 256 * 2
+        {0x01, 0x58}, // Power management 1
+        {0x02, 0xF3}, // Power management 2
+        {0x03, 0x00},
+        {0x04, 0x0C},
+        {0x08, 0x00},
+        {0x09, 0x00},
+        {0x0A, 0x00},
+        {0x0B, 0x02}, // DAC: 16-bit I2S
+        {0x0C, 0x00},
+        {0x26, 0x00},
+        {0x27, 0x00}, // LOUT1 vol
+        {0x2A, 0x00}, // ROUT1 vol
+        {0x2E, 0x1E}, // LOUT2 vol
+        {0x2F, 0x1E}, // ROUT2 vol
+        {0x30, 0x07}, // Enable outputs
+        {0x38, 0x09}, // I2S clk
     };
     for (size_t i = 0; i < sizeof(init_seq)/sizeof(init_seq[0]); i++) {
-        esp_err_t e = codec_write(init_seq[i][0], init_seq[i][1]);
+        esp_err_t e = i2c_write_reg(s_codec, init_seq[i][0], init_seq[i][1]);
         if (e != ESP_OK) {
             ESP_LOGW(TAG, "codec reg 0x%02X write failed: %s", init_seq[i][0], esp_err_to_name(e));
             return e;
@@ -95,18 +88,18 @@ static esp_err_t codec_init(void)
 
 static void set_volume_hw(uint8_t vol)
 {
-    uint8_t hw = (uint8_t)((vol * 30) / 100); // 0–30 for ES8388 LOUT1/ROUT1
-    codec_write(0x27, hw);
-    codec_write(0x2A, hw);
+    if (!s_codec) return;
+    uint8_t hw = (uint8_t)((vol * 30) / 100);
+    i2c_write_reg(s_codec, 0x27, hw);
+    i2c_write_reg(s_codec, 0x2A, hw);
 }
 
 static void play_tone_ms(uint32_t ms)
 {
-    static int16_t buf[640]; // 20ms at 16kHz stereo
+    static int16_t buf[640];
     uint32_t total_samples = (BEEP_SAMPLE_RATE * ms) / 1000;
     float phase = 0.0f;
     const float step = 2.0f * (float)M_PI * BEEP_FREQ_HZ / BEEP_SAMPLE_RATE;
-
     while (total_samples > 0) {
         uint32_t chunk = total_samples < 320 ? total_samples : 320;
         for (uint32_t i = 0; i < chunk; i++) {
@@ -125,12 +118,12 @@ static void silence_ms(uint32_t ms)
 {
     static int16_t buf[640];
     memset(buf, 0, sizeof(buf));
-    uint32_t total_samples = (BEEP_SAMPLE_RATE * ms) / 1000;
-    while (total_samples > 0) {
-        uint32_t chunk = total_samples < 320 ? total_samples : 320;
+    uint32_t total = (BEEP_SAMPLE_RATE * ms) / 1000;
+    while (total > 0) {
+        uint32_t chunk = total < 320 ? total : 320;
         size_t written = 0;
         i2s_channel_write(s_tx_chan, buf, chunk * 4, &written, pdMS_TO_TICKS(200));
-        total_samples -= chunk;
+        total -= chunk;
     }
 }
 
@@ -139,6 +132,7 @@ static void beep_task(void*)
     uint8_t pat;
     while (true) {
         if (xQueueReceive(s_queue, &pat, portMAX_DELAY) != pdTRUE) continue;
+        spk_enable(true);
         switch ((audio_pattern_t)pat) {
         case AUDIO_PAT_SILENT: break;
         case AUDIO_PAT_SHORT:
@@ -154,32 +148,16 @@ static void beep_task(void*)
             play_tone_ms(BEEP_SHORT_MS);
             break;
         }
+        spk_enable(false);
     }
 }
 
 esp_err_t tab5_audio_init(void)
 {
-#ifdef CONFIG_TAB5_AUDIO_DISABLED
-    ESP_LOGW(TAG, "audio disabled by config");
-    return ESP_OK;
-#endif
-
-    // Try to create I2C master bus on SYS I2C pins.
-    // If the BSP already owns these pins this will fail gracefully.
-    i2c_master_bus_config_t bus_cfg = {
-        .i2c_port    = I2C_NUM_0,
-        .sda_io_num  = m5::tab5::M5TAB5_PIN_SYS_I2C_SDA,
-        .scl_io_num  = m5::tab5::M5TAB5_PIN_SYS_I2C_SCL,
-        .clk_source  = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .flags = { .enable_internal_pullup = false },
-    };
-    // Use i2c_new_master_bus; if port already exists, try to get handle.
-    esp_err_t err = i2c_new_master_bus(&bus_cfg, &s_i2c_bus);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "I2C bus init failed (%s) — audio unavailable", esp_err_to_name(err));
-        s_available = false;
-        return ESP_OK; // non-fatal
+    i2c_master_bus_handle_t bus = m5tab5_get_sys_i2c_master_bus_handle();
+    if (!bus) {
+        ESP_LOGW(TAG, "sys I2C bus not ready — audio unavailable");
+        return ESP_OK;
     }
 
     i2c_device_config_t dev_cfg = {
@@ -187,22 +165,33 @@ esp_err_t tab5_audio_init(void)
         .device_address  = ES8388_I2C_ADDR,
         .scl_speed_hz    = 100000,
     };
-    err = i2c_master_bus_add_device(s_i2c_bus, &dev_cfg, &s_codec);
+    esp_err_t err = i2c_master_bus_add_device(bus, &dev_cfg, &s_codec);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "ES8388 device add failed — audio unavailable");
-        i2c_del_master_bus(s_i2c_bus); s_i2c_bus = nullptr;
+        ESP_LOGW(TAG, "ES8388 add_device failed (%s) — audio unavailable", esp_err_to_name(err));
         return ESP_OK;
+    }
+
+    /* Add the low-address PI4IO expander to toggle SPK_EN. */
+    i2c_device_config_t ext_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address  = PI4IO_ADDR_LOW,
+        .scl_speed_hz    = 400000,
+    };
+    err = i2c_master_bus_add_device(bus, &ext_cfg, &s_extio);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "PI4IO add_device failed (%s) — no SPK_EN control", esp_err_to_name(err));
+        /* Non-fatal: codec may still work but speaker amp won't be enabled */
+        s_extio = nullptr;
     }
 
     err = codec_init();
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "ES8388 init failed — audio unavailable");
         i2c_master_bus_rm_device(s_codec); s_codec = nullptr;
-        i2c_del_master_bus(s_i2c_bus); s_i2c_bus = nullptr;
+        if (s_extio) { i2c_master_bus_rm_device(s_extio); s_extio = nullptr; }
         return ESP_OK;
     }
 
-    // Init I2S
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     err = i2s_new_channel(&chan_cfg, &s_tx_chan, nullptr);
     if (err != ESP_OK) { ESP_LOGW(TAG, "i2s_new_channel failed"); return ESP_OK; }
@@ -226,10 +215,10 @@ esp_err_t tab5_audio_init(void)
     set_volume_hw(s_volume);
 
     s_queue = xQueueCreate(4, 1);
-    xTaskCreatePinnedToCore(beep_task, "tab5_beep", 3072, nullptr, 3, nullptr, 0);
+    xTaskCreatePinnedToCore(beep_task, "tab5_beep", 3072, nullptr, 2, nullptr, 0);
 
     s_available = true;
-    ESP_LOGI(TAG, "audio ready (ES8388, I2S port 0)");
+    ESP_LOGI(TAG, "audio ready (ES8388 via BSP I2C, SPK_EN via PI4IO)");
     return ESP_OK;
 }
 
