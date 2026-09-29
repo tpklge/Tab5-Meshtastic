@@ -49,4 +49,5 @@ idf_component_register(
         m5_tab5_component
         m5_tab5_keyboard_component
         meshtastic_protos
+        espressif__i2c_bus
 )
