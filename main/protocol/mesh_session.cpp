@@ -1,5 +1,5 @@
 #include "mesh_session.h"
-#include "../mesh/mesh_proto.h"
+#include "mesh_proto.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"

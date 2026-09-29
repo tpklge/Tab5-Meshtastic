@@ -1,7 +1,7 @@
 #include "settings_screen.h"
-#include "../../storage/settings_store.h"
-#include "../../board/lcd_tools.h"
-#include "../../board/tab5_audio.h"
+#include "settings_store.h"
+#include "lcd_tools.h"
+#include "tab5_audio.h"
 #include "../theme.h"
 #include "esp_log.h"
 

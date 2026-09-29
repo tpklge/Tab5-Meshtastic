@@ -1,6 +1,6 @@
 #pragma once
-#include "../transport/mesh_transport.h"
-#include "../app/app_state.h"
+#include "mesh_transport.h"
+#include "app_state.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"

@@ -13,8 +13,8 @@
 #include "settings.h"
 #include "ble_transport.h"
 #include "screens/settings_screen.h"
-#include "storage/settings_store.h"
-#include "board/tab5_audio.h"
+#include "settings_store.h"
+#include "tab5_audio.h"
 
 #include "lvgl.h"
 #include "lvgl_port.h"
