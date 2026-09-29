@@ -14,6 +14,7 @@
 #include "app_commands.h"
 #include "ble_transport.h"
 #include "screens/settings_screen.h"
+#include "screens/channels_screen.h"
 #include "settings_store.h"
 #include "tab5_audio.h"
 
@@ -38,9 +39,9 @@ namespace {
 
 const char* TAG = "ui_shell";
 
-constexpr int NUM_TABS = 4;
-const char* kNavText[NUM_TABS] = {"NODES", "CHAT", "RADIO", "SET"};
-const char* kNavIcon[NUM_TABS] = {LV_SYMBOL_LIST, LV_SYMBOL_KEYBOARD, LV_SYMBOL_WIFI, LV_SYMBOL_SETTINGS};
+constexpr int NUM_TABS = 5;
+const char* kNavText[NUM_TABS] = {"NODES", "CHAT", "RADIO", "SET", "CANAIS"};
+const char* kNavIcon[NUM_TABS] = {LV_SYMBOL_LIST, LV_SYMBOL_KEYBOARD, LV_SYMBOL_WIFI, LV_SYMBOL_SETTINGS, LV_SYMBOL_DIRECTORY};
 
 enum NodeSort { SORT_HEARD = 0, SORT_SNR = 1, SORT_HOPS = 2 };
 const char* kSortText[3] = {"Heard", "SNR", "Hops"};
@@ -89,6 +90,7 @@ struct ShellState {
 
     /* chat tab */
     lv_obj_t* chat_list  = nullptr;   /* scrolling bubble area   */
+    lv_obj_t* chat_title = nullptr;
     lv_obj_t* chat_input = nullptr;   /* composer textarea       */
     lv_obj_t* chat_kb    = nullptr;   /* on-screen keyboard      */
     uint32_t  msg_seen   = 0;         /* bubbles already rendered */
@@ -213,6 +215,7 @@ void set_color(lv_obj_t* l, uint32_t c)
 void set_tab(int i)
 {
     if (i < 0 || i >= NUM_TABS) return;
+    if (S.active == 4 && i != 4) channels_screen_leave();
     close_detail();   /* leaving to another tab dismisses the node detail */
     if (S.chat_kb) lv_obj_add_flag(S.chat_kb, LV_OBJ_FLAG_HIDDEN);   /* hide OSK */
     S.active = i;
@@ -436,6 +439,11 @@ void sort_cb(lv_event_t* e)
 
 void refresh_cb(lv_timer_t*)
 {
+    if (S.active == 4) channels_screen_refresh();
+    if (S.chat_title) {
+        char title[80]; snprintf(title, sizeof(title), "Enviar no canal %u (selecione em CANAIS)", settings_store_get()->sel_channel);
+        lv_label_set_text(S.chat_title, title);
+    }
     app_snapshot_t s;
     app_state_snapshot(&s);
 
@@ -768,6 +776,10 @@ void add_bubble(lv_obj_t* parent, const msg_rec_t* m)
                           m->is_self ? LV_FLEX_ALIGN_END : LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(col, 2, 0);
 
+    {
+        char channel_label[32]; snprintf(channel_label, sizeof(channel_label), "Canal %u", m->channel);
+        label(col, channel_label, FONT_META, C_DIM);
+    }
     if (!m->is_self) {
         char who[16];
         sender_name(m->from, who, sizeof(who));
@@ -871,7 +883,7 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
     lv_obj_set_style_pad_hor(hdr, 20, 0);
     lv_obj_set_style_pad_column(hdr, 10, 0);
     hairline_side(hdr, LV_BORDER_SIDE_BOTTOM);
-    label(hdr, "Primary", FONT_ROW, C_HI);
+    S.chat_title = label(hdr, "Canal 0", FONT_ROW, C_HI);
     label(hdr, "broadcast", FONT_META, C_DIM);
 
     lv_obj_t* list = box(panel, lv_pct(100), 0);
@@ -1376,6 +1388,7 @@ void build_shell(void)
     S.panel[2] = make_radio_panel(content);
     S.panel[3] = settings_screen_make(content);
     S.settings_panel = S.panel[3];
+    S.panel[4] = channels_screen_make(content);
     S.detail   = make_detail_panel(content);   /* overlays the content area */
 
 #if UI_DIAG_OVERLAY
@@ -1461,7 +1474,9 @@ void ui_kbd_feed(const char* str, unsigned char len, unsigned char modifier)
 
     if (!lvgl_port_lock(100)) return;   /* drop input rather than block the kbd task */
 
-    if (S.active == 2 && S.radio_view == 2) {           /* PIN entry */
+    if (S.active == 4) {
+        channels_screen_key(act == KBD_TEXT ? text : nullptr, act == KBD_BACKSPACE, act == KBD_SUBMIT);
+    } else if (S.active == 2 && S.radio_view == 2) {           /* PIN entry */
         size_t plen = strlen(S.pin_buf);
         if (act == KBD_BACKSPACE) {
             if (plen) { S.pin_buf[plen - 1] = 0; update_pin_disp(); }

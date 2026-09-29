@@ -163,10 +163,15 @@ bool app_state_get_node(uint32_t num, node_rec_t* out)
 
 void app_state_add_message(uint32_t from, const char* text, bool is_self, int64_t now_us)
 {
-    message_store_append(from, 0, 0, 0, !is_self, is_self, now_us, 0, 0, 0, text);
+    app_state_add_channel_message(from, text, is_self, now_us, 0, true);
+}
+void app_state_add_channel_message(uint32_t from, const char* text, bool is_self, int64_t now_us, uint8_t channel, bool persist)
+{
+    if (persist) message_store_append(from, 0, 0, channel, !is_self, is_self, now_us, 0, 0, 0, text);
 
     lock();
     msg_rec_t* m = &g.msgs[g.msg_total % APP_MAX_MSGS];
+    m->channel = channel;
     m->from    = from;
     m->is_self = is_self;
     m->recv_us = now_us;

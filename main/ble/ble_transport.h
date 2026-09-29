@@ -15,6 +15,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,6 +25,7 @@ extern "C" {
 /* Configure the NimBLE host (security/MTU/bond store), then start the host task
  * and begin scanning on sync. Call once from app_main after nimble_port_init(). */
 void ble_transport_start(void);
+esp_err_t ble_transport_send_raw(const uint8_t* data, size_t len);
 
 /* Narrow UI→BLE command: send a broadcast text message on the primary channel.
  * Safe to call from the LVGL task (NimBLE GATT writes are thread-safe). No-op if

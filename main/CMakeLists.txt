@@ -15,6 +15,10 @@ idf_component_register(
         "transport/uart_transport.cpp"
         # Protocol session
         "protocol/mesh_session.cpp"
+        "protocol/channel_service.cpp"
+        "protocol/channel_url.cpp"
+        "board/channel_camera.cpp"
+        "ui/screens/channels_screen.cpp"
         # Persistent storage
         "storage/app_storage.cpp"
         "storage/message_store.cpp"
@@ -34,6 +38,10 @@ idf_component_register(
     # esp_driver_sdmmc: esp_hosted.h transitively includes driver/sdmmc_host.h
     # but esp_hosted doesn't propagate it, so we pull it in here.
     REQUIRES
+        bootloader_support
+        esp_video
+        quirc
+        mbedtls
         nvs_flash
         bt
         esp_hosted

@@ -57,7 +57,7 @@ esp_err_t message_store_init(void)
 }
 
 esp_err_t message_store_append(uint32_t from_node, uint32_t /*to_node*/,
-                                uint32_t /*packet_id*/, uint8_t /*channel_idx*/,
+                                uint32_t /*packet_id*/, uint8_t channel_idx,
                                 bool /*is_broadcast*/, bool is_tx,
                                 int64_t timestamp_us, int64_t /*abs_time_s*/,
                                 int16_t /*snr*/, int16_t /*rssi*/,
@@ -66,7 +66,7 @@ esp_err_t message_store_append(uint32_t from_node, uint32_t /*to_node*/,
     if (!s_nvs) return ESP_OK;  /* silent no-op — already logged at init */
 
     nvs_msg_t msg = {};
-    msg.direction    = is_tx ? 1 : 0;
+    msg.direction    = (is_tx ? 1 : 0) | ((channel_idx & 7) << 1); // v1-compatible: bits 1..3 store channel
     msg.from_node    = from_node;
     msg.timestamp_us = timestamp_us ? timestamp_us : esp_timer_get_time();
     if (text) {
@@ -115,7 +115,8 @@ uint32_t message_store_load_page(uint8_t /*channel_idx*/, uint32_t page,
         msg_loaded_t* dst = &out[loaded++];
         memset(dst, 0, sizeof(*dst));
         dst->seq          = s_total - s_count + matched;
-        dst->direction    = msg.direction;
+        dst->direction    = msg.direction & 1;
+        dst->channel_idx  = (msg.direction >> 1) & 7;
         dst->from_node    = msg.from_node;
         dst->timestamp_us = msg.timestamp_us;
         uint8_t tlen = msg.text_len < (uint8_t)(sizeof(dst->text) - 1) ? msg.text_len : (uint8_t)(sizeof(dst->text) - 1);

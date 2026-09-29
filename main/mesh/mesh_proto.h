@@ -26,6 +26,7 @@ typedef enum {
     MESH_EV_MY_INFO,          /* MyNodeInfo: my node number               */
     MESH_EV_NODE_INFO,        /* NodeInfo: a mesh node (name/snr/hops)    */
     MESH_EV_CONFIG_COMPLETE,  /* config download finished (echoes our id) */
+    MESH_EV_REBOOTED,         /* radio restarted after configuration */
     MESH_EV_CHANNEL,          /* a Channel record                         */
     MESH_EV_TEXT,             /* TEXT_MESSAGE_APP packet                  */
     MESH_EV_POSITION,         /* POSITION_APP packet (live position)      */
@@ -69,6 +70,7 @@ typedef struct {
 
 typedef struct {
     uint32_t from;
+    uint8_t channel;
     char     text[233];   /* Meshtastic Data payload max  */
 } mesh_text_t;
 
@@ -93,6 +95,7 @@ size_t mesh_encode_want_config(uint32_t id, uint8_t* buf, size_t cap);
 /* Encode ToRadio{ broadcast TEXT_MESSAGE_APP = text } into buf. Returns bytes
  * written, 0 on failure. */
 size_t mesh_encode_text(const char* text, uint8_t* buf, size_t cap);
+size_t mesh_encode_text_channel(const char* text, uint8_t channel, uint8_t* buf, size_t cap);
 
 /* Decode one FromRadio protobuf. Always fills *ev (kind == MESH_EV_DECODE_FAIL
  * on failure). Returns true if decoding succeeded. */

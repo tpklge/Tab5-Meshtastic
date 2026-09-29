@@ -15,6 +15,11 @@ the hosted link.
 > The **Nodes** view — live mesh with signal, hops, and last-heard. (Design
 > reference; the on-device render tracks it closely, if not pixel-for-pixel.)
 
+## Canais e QR
+
+Gerenciamento de canais, geracao de chaves AES-256, compartilhamento por QR e
+importacao pela camera: veja [docs/CHANNELS_QR.md](docs/CHANNELS_QR.md).
+
 ## Features
 
 - **Onboarding / device picker** — scan, pick a radio, enter its PIN, and it's

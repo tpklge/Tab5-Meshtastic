@@ -121,6 +121,7 @@ bool app_state_get_node(uint32_t num, node_rec_t* out);
 
 typedef struct {
     uint32_t from;        /* sender node num (0 / self for local echo) */
+    uint8_t  channel;
     char     text[233];
     bool     is_self;     /* we sent it (right-aligned, green)         */
     int64_t  recv_us;     /* esp_timer time appended                   */
@@ -128,6 +129,7 @@ typedef struct {
 
 /* Append one message to the bounded ring (oldest dropped past APP_MAX_MSGS). */
 void app_state_add_message(uint32_t from, const char* text, bool is_self, int64_t now_us);
+void app_state_add_channel_message(uint32_t from, const char* text, bool is_self, int64_t now_us, uint8_t channel, bool persist);
 
 /* Total messages ever appended (monotonic). The UI compares it to what it has
  * already rendered so it can append only the new ones (FR-4.3, no full rebuild). */

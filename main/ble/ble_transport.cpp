@@ -1,3 +1,5 @@
+#include "channel_service.h"
+#include "settings_store.h"
 /*
  * Tab5-Meshtastic v2 — BLE transport + sync engine.
  *
@@ -205,6 +207,13 @@ static void send_want_config(void)
 /* Send a broadcast text message and locally echo it (the radio doesn't loop our
  * own broadcast back). Called from the LVGL task; NimBLE GATT writes are
  * thread-safe. */
+esp_err_t ble_transport_send_raw(const uint8_t* data, size_t len)
+{
+    if (!s_ready || !s_conn.toradio_handle) return ESP_ERR_INVALID_STATE;
+    if (len > s_mtu - 3) return ESP_ERR_INVALID_SIZE;
+    return ble_gattc_write_flat(s_conn.conn_handle, s_conn.toradio_handle, data, len, nullptr, nullptr) == 0 ? ESP_OK : ESP_FAIL;
+}
+
 void ble_transport_send_text(const char* text)
 {
     if (!text || !text[0]) return;
@@ -212,10 +221,10 @@ void ble_transport_send_text(const char* text)
         ESP_LOGW(TAG, "send_text ignored — not connected");
         return;
     }
-    app_state_add_message(s_my_num, text, true, esp_timer_get_time());   /* local echo */
+    app_state_add_channel_message(s_my_num, text, true, esp_timer_get_time(), settings_store_get()->sel_channel, true);   /* local echo */
 
     uint8_t buf[256];
-    size_t n = mesh_encode_text(text, buf, sizeof(buf));
+    size_t n = mesh_encode_text_channel(text, settings_store_get()->sel_channel, buf, sizeof(buf));
     if (n == 0) { ESP_LOGE(TAG, "text encode failed"); return; }
     int rc = ble_gattc_write_flat(s_conn.conn_handle, s_conn.toradio_handle, buf, n, NULL, NULL);
     ESP_LOGI(TAG, "sent text (%u bytes) rc=%d", (unsigned)n, rc);
@@ -370,8 +379,8 @@ static void handle_event(const mesh_event_t* ev, uint16_t len)
     case MESH_EV_TEXT:
         ESP_LOGW(TAG, "TEXT from 0x%08lx: \"%s\"",
                  (unsigned long)ev->u.text.from, ev->u.text.text);
-        app_state_add_message(ev->u.text.from, ev->u.text.text,
-                              ev->u.text.from == s_my_num, esp_timer_get_time());
+        app_state_add_channel_message(ev->u.text.from, ev->u.text.text,
+                              ev->u.text.from == s_my_num, esp_timer_get_time(), ev->u.text.channel, true);
         break;
     case MESH_EV_POSITION:
         app_state_set_node_position(ev->u.position.from, &ev->u.position.pos,
@@ -410,6 +419,7 @@ static int read_cb(uint16_t, const struct ble_gatt_error* error,
     publish_diag();
 
     mesh_event_t ev;
+    channel_service_on_frame(buf, out);
     mesh_decode_fromradio(buf, out, &ev);
     handle_event(&ev, out);
 

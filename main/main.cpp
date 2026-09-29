@@ -35,9 +35,16 @@
 #include "message_store.h"
 #include "tab5_audio.h"
 #include "app_commands.h"
+#include "channel_service.h"
 
 static UartTransport s_uart_transport;
 static MeshSession   s_mesh_session;
+static uint8_t s_active_transport = 1;
+static esp_err_t send_admin_frame(const uint8_t* data, size_t len)
+{
+    return s_active_transport == 0 ? ble_transport_send_raw(data, len)
+                                   : s_uart_transport.send_toproto(data, len);
+}
 
 static const char* TAG = "tab5-mesh-v2";
 
@@ -64,6 +71,8 @@ extern "C" void app_main(void)
     app_storage_init();
     settings_store_init();
     message_store_init();
+    s_active_transport = settings_store_get()->transport;
+    ESP_ERROR_CHECK(channel_service_init(send_admin_frame));
 
     /* Restore persisted messages into AppState so history shows on first load. */
     {
@@ -71,7 +80,7 @@ extern "C" void app_main(void)
         uint32_t n = message_store_load_page(0xFF, 0, hist, 30);
         for (uint32_t i = 0; i < n; i++) {
             bool is_self = (hist[i].direction == 1);
-            app_state_add_message(hist[i].from_node, hist[i].text, is_self, hist[i].timestamp_us);
+            app_state_add_channel_message(hist[i].from_node, hist[i].text, is_self, hist[i].timestamp_us, hist[i].channel_idx, false);
         }
         if (n) ESP_LOGI(TAG, "restored %lu messages from NVS", (unsigned long)n);
     }
@@ -128,7 +137,12 @@ extern "C" void app_main(void)
 extern "C" void app_send_text(const char* text)
 {
     if (!text || !text[0]) return;
-    if (settings_store_get()->transport == 0) {
+    channel_snapshot_t channels; channel_service_snapshot(&channels);
+    uint8_t selected = settings_store_get()->sel_channel;
+    if (selected >= 8 || !channels.known[selected] || channels.channels[selected].role == meshtastic_Channel_Role_DISABLED) {
+        ESP_LOGW(TAG, "selected chat channel unavailable"); return;
+    }
+    if (s_active_transport == 0) {
         ble_transport_send_text(text);
     } else {
         s_mesh_session.send_text(text);

@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "mesh_transport.h"
 #include "app_state.h"
 #include "esp_err.h"
@@ -42,10 +43,12 @@ private:
     uint32_t    next_want_config_id();
 
     IMeshTransport*   m_transport{nullptr};
-    transport_conn_t  m_conn{TRANSPORT_CONN_IDLE};
+    std::atomic<transport_conn_t> m_conn{TRANSPORT_CONN_IDLE};
     uint32_t          m_want_config_id{0};
-    uint32_t          m_pending_config_id{0};
-    bool              m_config_complete{false};
+    std::atomic<uint32_t> m_pending_config_id{0};
+    std::atomic<bool> m_config_complete{false};
+    std::atomic<int64_t> m_config_sent_us{0};
+    unsigned m_config_attempts{0};
     volatile bool     m_running{false};
     TaskHandle_t      m_task{nullptr};
     SemaphoreHandle_t m_mutex{nullptr};

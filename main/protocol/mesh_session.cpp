@@ -1,3 +1,5 @@
+#include "channel_service.h"
+#include "settings_store.h"
 #include "mesh_session.h"
 #include "mesh_proto.h"
 #include "esp_log.h"
@@ -55,10 +57,12 @@ void MeshSession::session_task(void* arg)
 void MeshSession::run_task()
 {
     while (m_running) {
-        if (m_conn == TRANSPORT_CONN_SYNCING && !m_config_complete
-                && m_pending_config_id == 0) {
-            do_send_want_config();
-        }
+        if (m_conn == TRANSPORT_CONN_SYNCING && !m_config_complete) {
+            if (m_pending_config_id == 0 || esp_timer_get_time() - m_config_sent_us > 5000000LL) {
+                if (m_config_attempts++ < 12) do_send_want_config();
+                else { m_conn = TRANSPORT_CONN_ERROR; app_state_set_conn(CONN_ERROR, "UART sync timeout"); }
+            }
+        } else m_config_attempts = 0;
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
@@ -80,6 +84,7 @@ void MeshSession::do_send_want_config()
     if (!m_transport) return;
     uint32_t id = next_want_config_id();
     m_pending_config_id = id;
+    m_config_sent_us = esp_timer_get_time();
 
     uint8_t buf[64];
     size_t  len = mesh_encode_want_config(id, buf, sizeof(buf));
@@ -91,7 +96,7 @@ void MeshSession::do_send_want_config()
 
 void MeshSession::handle_config_complete(uint32_t id)
 {
-    (void)id;
+    if (id != m_pending_config_id) return;
     ESP_LOGI(TAG, "config complete");
     m_config_complete = true;
     m_pending_config_id = 0;
@@ -102,6 +107,7 @@ void MeshSession::handle_config_complete(uint32_t id)
 void MeshSession::on_fromradio(const uint8_t* data, size_t len)
 {
     if (len > UINT16_MAX) return;
+    channel_service_on_frame(data, len);
     mesh_event_t ev;
     if (!mesh_decode_fromradio(data, (uint16_t)len, &ev)) {
         return;
@@ -128,6 +134,10 @@ void MeshSession::on_fromradio(const uint8_t* data, size_t len)
         break;
     }
 
+    case MESH_EV_REBOOTED:
+        on_conn_state(TRANSPORT_CONN_SYNCING);
+        break;
+
     case MESH_EV_CONFIG_COMPLETE:
         handle_config_complete(ev.u.config_complete_id);
         break;
@@ -138,7 +148,7 @@ void MeshSession::on_fromradio(const uint8_t* data, size_t len)
         break;
 
     case MESH_EV_TEXT:
-        app_state_add_message(ev.u.text.from, ev.u.text.text, /*is_self=*/false, now_us);
+        app_state_add_channel_message(ev.u.text.from, ev.u.text.text, /*is_self=*/false, now_us, ev.u.text.channel, true);
         break;
 
     case MESH_EV_POSITION:
@@ -194,13 +204,13 @@ esp_err_t MeshSession::send_text(const char* text)
     if (!m_transport || !m_config_complete) return ESP_ERR_INVALID_STATE;
 
     uint8_t buf[256];
-    size_t len = mesh_encode_text(text, buf, sizeof(buf));
+    size_t len = mesh_encode_text_channel(text, settings_store_get()->sel_channel, buf, sizeof(buf));
     if (len == 0) return ESP_ERR_INVALID_SIZE;
 
     // Local echo
     app_snapshot_t snap;
     app_state_snapshot(&snap);
-    app_state_add_message(snap.my_num, text, /*is_self=*/true, esp_timer_get_time());
+    app_state_add_channel_message(snap.my_num, text, /*is_self=*/true, esp_timer_get_time(), settings_store_get()->sel_channel, true);
 
     return m_transport->send_toproto(buf, len);
 }

@@ -66,7 +66,7 @@ esp_err_t UartTransport::start()
     }
     if (m_cbs.on_conn_state) m_cbs.on_conn_state(TRANSPORT_CONN_CONNECTING);
 
-    xTaskCreatePinnedToCore(uart_task, "uart_transport", 4096, this, 3, &m_task, 1);
+    xTaskCreatePinnedToCore(uart_task, "uart_transport", 8192, this, 3, &m_task, 1);
     ESP_LOGI(TAG, "started on UART%d TX=%d RX=%d %dbaud", GROVE_UART_PORT,
              GROVE_GPIO_TX, GROVE_GPIO_RX, GROVE_BAUD);
     return ESP_OK;
