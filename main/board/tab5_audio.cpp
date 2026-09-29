@@ -17,8 +17,8 @@
 #include <math.h>
 #include <string.h>
 
-/* BSP internal: exposes the i2c_master_bus_handle_t it already owns. */
-extern "C" i2c_master_bus_handle_t m5tab5_get_sys_i2c_master_bus_handle(void);
+/* BSP private header — exposes the i2c_master_bus_handle_t it already owns. */
+#include "m5tab5_driver_common.h"
 
 static const char* TAG = "tab5_audio";
 
@@ -154,7 +154,7 @@ static void beep_task(void*)
 
 esp_err_t tab5_audio_init(void)
 {
-    i2c_master_bus_handle_t bus = m5tab5_get_sys_i2c_master_bus_handle();
+    i2c_master_bus_handle_t bus = m5::tab5::m5tab5_get_sys_i2c_master_bus_handle();
     if (!bus) {
         ESP_LOGW(TAG, "sys I2C bus not ready — audio unavailable");
         return ESP_OK;

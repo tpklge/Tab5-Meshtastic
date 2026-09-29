@@ -30,6 +30,7 @@ idf_component_register(
         "transport"
         "protocol"
         "storage"
+        "../components/m5_tab5_component/src/drivers"
     # esp_driver_sdmmc: esp_hosted.h transitively includes driver/sdmmc_host.h
     # but esp_hosted doesn't propagate it, so we pull it in here.
     REQUIRES
