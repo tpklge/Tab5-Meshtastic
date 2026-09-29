@@ -20,7 +20,7 @@ typedef struct __attribute__((packed)) {
 } settings_file_t;
 
 static app_settings_t s_settings = {
-    .transport   = 0,   // BLE
+    .transport   = 1,   // UART (RAK3172H via Grove)
     .brightness  = 80,
     .notif_en    = 1,
     .notif_vol   = 70,

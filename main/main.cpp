@@ -28,11 +28,15 @@
 #include "app_state.h"
 #include "settings.h"
 #include "ble_transport.h"
+#include "uart_transport.h"
+#include "mesh_session.h"
 #include "app_storage.h"
 #include "settings_store.h"
 #include "message_store.h"
-#include "lcd_tools.h"
 #include "tab5_audio.h"
+
+static UartTransport s_uart_transport;
+static MeshSession   s_mesh_session;
 
 static const char* TAG = "tab5-mesh-v2";
 
@@ -82,23 +86,27 @@ extern "C" void app_main(void)
     tab5_audio_init();
     tab5_audio_set_volume(settings_store_get()->notif_vol);
 
-    /* P4<->C6 transport, then the NimBLE host, then our BLE transport.
-     * Stage labels are shown on-screen (status chip) so we can see where
-     * a cold-boot hangs without attaching serial (which resets the P4). */
-    app_state_set_conn(CONN_BOOT, "ESP_HOST");
-    ESP_LOGI(TAG, "esp_hosted_init()");
-    ESP_ERROR_CHECK(esp_hosted_init());
+    const uint8_t transport = settings_store_get()->transport;
+    ESP_LOGI(TAG, "transport mode: %s", transport == 0 ? "BLE" : "UART");
 
-    /* transport_drv_reconfigure() (called from ble_transport_ll_init inside
-     * nimble_port_init) resets the C6 and waits up to MAX_RETRY_TRANSPORT_ACTIVE
-     * seconds for TX-readiness.  We patched that constant to 30 (from 1000) so
-     * the worst-case wait is 30 s instead of ~16 min. */
-    app_state_set_conn(CONN_BOOT, "NIMBLE");
-    ret = nimble_port_init();
-    if (ret != ESP_OK) { ESP_LOGE(TAG, "nimble_port_init: %s", esp_err_to_name(ret)); return; }
+    if (transport == 0) {
+        /* BLE via onboard C6: bring up SDIO tunnel, then NimBLE host. */
+        app_state_set_conn(CONN_BOOT, "ESP_HOST");
+        ESP_ERROR_CHECK(esp_hosted_init());
 
-    app_state_set_conn(CONN_BOOT, "BLE START");
-    ble_transport_start();
+        app_state_set_conn(CONN_BOOT, "NIMBLE");
+        ret = nimble_port_init();
+        if (ret != ESP_OK) { ESP_LOGE(TAG, "nimble_port_init: %s", esp_err_to_name(ret)); return; }
 
-    ESP_LOGI(TAG, "init done; transport=%d", settings_store_get()->transport);
+        app_state_set_conn(CONN_BOOT, "BLE START");
+        ble_transport_start();
+    } else {
+        /* UART transport (RAK3172H via Grove): no BLE/NimBLE/esp_hosted needed. */
+        app_state_set_conn(CONN_BOOT, "UART");
+        s_mesh_session.attach_transport(&s_uart_transport);
+        ESP_ERROR_CHECK(s_uart_transport.start());
+        ESP_ERROR_CHECK(s_mesh_session.start());
+    }
+
+    ESP_LOGI(TAG, "init done; transport=%d", transport);
 }
