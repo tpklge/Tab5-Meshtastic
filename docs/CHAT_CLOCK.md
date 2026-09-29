@@ -12,11 +12,10 @@
 Teste nativo (macOS, sanitizers):
 
 ```sh
-SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk c++ -std=c++17 -g -fsanitize=address,undefined -Itests/stubs -Imain/app -Imain/mesh -Imain/storage tests/chat_clock_test.cpp main/app/app_state.cpp main/app/clock_calendar.cpp -o /tmp/tab5-chat-clock-test
-/tmp/tab5-chat-clock-test
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk python3 tests/run_chat_tests.py
 ```
 
-Cobre ordem dos eventos de identidade, snapshots concorrentes do historico, indices de canais, anos bissextos, fusos e limites do RTC. Validar no Tab5: arrastar uma conversa longa, trocar canais, enviar em ambos, salvar data/hora e reiniciar pela bateria. Nenhum teste instala o firmware.
+Cobre ordem dos eventos de identidade, snapshots concorrentes do historico, indices de canais, anos bissextos, fusos e limites do RTC. Tambem executa os widgets reais com LVGL sem display: alcance da rolagem, preservacao da posicao de leitura, filtro por canal, rascunhos, limite de objetos, rajadas de mensagens e formulario Wi-Fi/teclado. Requer CMake e compilador C++; no Linux, omita SDKROOT. Validar no Tab5: arrastar uma conversa longa, trocar canais, enviar em ambos, salvar data/hora e reiniciar pela bateria. Nenhum teste instala o firmware.
 
 Referencias: [LVGL 9.5 flags](https://lvgl.io/docs/open/9.5/common-widget-features/flags), [RTC RX8130 no exemplo oficial Tab5](https://github.com/m5stack/M5Tab5-UserDemo/tree/b4e356bc491ca070d54004718dad789c07d5fc93/platforms/tab5/main/hal/utils/rx8130). O driver local preserva VLF (bit 1) durante a inicializacao, rejeita datas invalidas e limpa VLF apenas apos gravar a data/hora completa.
 
