@@ -82,9 +82,11 @@ extern "C" void app_main(void)
      * PIN entry. Best-effort: absence is logged, not fatal. */
     kbd_start();
 
-    /* Audio: non-fatal if ES8388/I2S unavailable. */
-    tab5_audio_init();
-    tab5_audio_set_volume(settings_store_get()->notif_vol);
+    /* Audio disabled: tab5_audio creates a second I2C master on the same bus
+     * pins the BSP already owns, which locks up the I2C bus and breaks touch.
+     * Re-enable once m5_tab5_component exposes get_sys_i2c_bus(). */
+    // tab5_audio_init();
+    // tab5_audio_set_volume(settings_store_get()->notif_vol);
 
     const uint8_t transport = settings_store_get()->transport;
     ESP_LOGI(TAG, "transport mode: %s", transport == 0 ? "BLE" : "UART");
