@@ -34,6 +34,10 @@
 #include "lcd_tools.h"
 #include "tab5_audio.h"
 
+/* transport_drv.h is private to esp_hosted; forward-declare the readiness
+ * probe so we can poll before calling nimble_port_init(). */
+extern "C" uint8_t is_transport_tx_ready(void);
+
 static const char* TAG = "tab5-mesh-v2";
 
 static m5::tab5::m5tab5_component s_board;
@@ -95,7 +99,6 @@ extern "C" void app_main(void)
      * the transport is still coming up.  Poll until TX-ready (max 10 s). */
     app_state_set_conn(CONN_BOOT, "WAIT C6");
     {
-        extern "C" uint8_t is_transport_tx_ready(void);
         const int kMaxMs = 10000;
         for (int elapsed = 0; !is_transport_tx_ready() && elapsed < kMaxMs; elapsed += 50) {
             vTaskDelay(pdMS_TO_TICKS(50));
