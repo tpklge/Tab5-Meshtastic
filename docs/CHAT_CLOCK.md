@@ -35,7 +35,7 @@ Referencia: [Wi-Fi ESP-IDF 5.4](https://docs.espressif.com/projects/esp-idf/en/v
 
 A busca usa `esp_wifi_scan_start(..., false)` e aguarda `WIFI_EVENT_SCAN_DONE`, com limite de 15 segundos. Desligar Wi-Fi ou conectar cancela uma busca pendente. A tarefa de rede roda na CPU0 com prioridade 2, separada do LVGL na CPU1. A leitura do estado pela interface usa tentativa de mutex sem espera; callbacks de rede apenas notificam a tarefa. A tela mostra a etapa e o tempo decorrido para distinguir inicializacao do C6 de uma busca de redes. Os prazos da busca nao interrompem uma chamada RPC interna travada: nesse caso a interface deve permanecer navegavel e indicar ausencia de resposta. A causa exata do travamento fisico ainda depende de validacao no Tab5.
 
-O topo mostra a bateria **do Tab5**, com tensao medida pelo INA226 interno a cada 5 segundos e porcentagem aproximada (prefixo `~`). A estimativa usa uma curva de tensao de bateria Li-ion de duas celulas (6,0-8,4 V); carga conectada, temperatura, desgaste e carregamento afetam a precisao. Nao e contagem de carga. Falha de leitura, leitura invalida ou amostra com mais de 15 segundos mostra `--`. O monitor roda fora do LVGL e nao acessa o conector Grove. Referencia de hardware: [Tab5 oficial](https://docs.m5stack.com/en/core/Tab5).
+O topo mostra a bateria **do Tab5**, com tensao medida pelo INA226 interno a cada 2 segundos e porcentagem aproximada (prefixo `~`). A estimativa usa uma curva de tensao de bateria Li-ion de duas celulas (6,0-8,4 V); carga conectada, temperatura, desgaste e carregamento afetam a precisao. Nao e contagem de carga. Uma falha transitoria preserva a ultima amostra por ate 15 segundos. Depois disso aparece `--`. Uma tensao valida fora da curva de estimativa continua visivel, com porcentagem `--`. O monitor roda fora do LVGL e nao acessa o conector Grove. Referencia de hardware: [Tab5 oficial](https://docs.m5stack.com/en/core/Tab5).
 
 Teste do fluxo de busca com driver simulado, incluindo timeout, cancelamento e mutex ocupado:
 
@@ -45,3 +45,17 @@ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk c++ -std=c++17 -
 ```
 
 A lentidao observada **no launcher antes de executar este aplicativo** nao pode ser corrigida neste firmware. Os GPIO53/54 usados pelo UART do RAK tambem sao SDA/SCL do Grove; uma busca I2C do launcher nesse conector e uma hipotese a verificar conforme o launcher e sua versao. Nao mudar tensoes ou pinagem sem verificar o modulo/carrier; o teste comparativo e iniciar o launcher com/sem o RAK, desligando o equipamento antes de mudar a conexao.
+
+
+## Compatibilidade do INA226
+
+O driver verifica o fabricante `0x5449` e os 12 bits superiores do DIE_ID (`0x226`), permitindo os quatro bits inferiores de revisao. A comparacao anterior com `0x2260` rejeitava a revisao `0x2261`, documentada pela [Texas Instruments](https://e2e.ti.com/support/amplifiers-group/amplifiers/f/amplifiers-forum/1441248/ina226-input-bias-current). Isso e uma causa possivel de indicador vazio; a revisao do aparelho precisa ser confirmada em hardware.
+
+O monitor aguarda a primeira conversao apos inicializar e le somente tensao, independentemente dos registros de corrente/potencia. Uma falha de inicializacao e repetida a cada 5 segundos. Segurar a barra superior abre o diagnostico: `bat:0` indica a ultima leitura sem erro; outro valor hexadecimal identifica a falha do sensor/I2C.
+
+Teste do driver real com I2C simulado:
+
+```sh
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk c++ -std=c++17 -g -fsanitize=address,undefined -Itests/battery_stubs -Itests/ui_stubs -Itests/stubs -Icomponents/m5_tab5_component/src tests/ina226_driver_test.cpp components/m5_tab5_component/src/drivers/ina226/m5tab5_ina226.cpp -o /tmp/tab5-ina226-test
+/tmp/tab5-ina226-test
+```

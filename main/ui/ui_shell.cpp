@@ -461,10 +461,11 @@ void refresh_cb(lv_timer_t*)
     set_text(S.clock_label, clock_text);
     battery_snapshot_t battery; battery_monitor_snapshot(&battery);
     char battery_text[48];
-    if (battery.valid) snprintf(battery_text, sizeof(battery_text), LV_SYMBOL_BATTERY_FULL " ~%d%%  %.2f V", battery.percent, (double)battery.voltage);
+    if (battery.valid && battery.percent < 0) snprintf(battery_text, sizeof(battery_text), LV_SYMBOL_BATTERY_EMPTY " --%%  %.2f V", (double)battery.voltage);
+    else if (battery.valid) snprintf(battery_text, sizeof(battery_text), LV_SYMBOL_BATTERY_FULL " ~%d%%  %.2f V", battery.percent, (double)battery.voltage);
     else snprintf(battery_text, sizeof(battery_text), LV_SYMBOL_BATTERY_EMPTY " --%%  -- V");
     set_text(S.battery_label, battery_text);
-    set_color(S.battery_label, battery.valid && battery.percent <= 15 ? C_AMBER : C_HI);
+    set_color(S.battery_label, battery.valid && battery.percent >= 0 && battery.percent <= 15 ? C_AMBER : C_HI);
     app_snapshot_t s;
     app_state_snapshot(&s);
 
@@ -492,12 +493,12 @@ void refresh_cb(lv_timer_t*)
         char wc = d->wc_acked ? 'Y' : (d->wc_sent ? 'q' : 'n');
         char line[176];
         snprintf(line, sizeof(line),
-                 "%s  mtu%u ci%u  rd%lu ni%lu df%lu nf%lu pl%lu rt%lu  su%c wc%c wr%lu err%d",
+                 "%s  mtu%u ci%u  rd%lu ni%lu df%lu nf%lu pl%lu rt%lu  su%c wc%c wr%lu err%d bat:%x",
                  s.stage, (unsigned)d->mtu, (unsigned)d->conn_itvl,
                  (unsigned long)d->reads, (unsigned long)d->nodeinfo,
                  (unsigned long)d->decfail, (unsigned long)d->notifies,
                  (unsigned long)d->polls, (unsigned long)d->read_tmos,
-                 d->cccd_ok ? 'Y' : 'n', wc, (unsigned long)d->wc_retries, d->last_err);
+                 d->cccd_ok ? 'Y' : 'n', wc, (unsigned long)d->wc_retries, d->last_err, (unsigned)battery.error);
         set_text(S.diag_lbl, line);
     }
 #endif

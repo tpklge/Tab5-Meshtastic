@@ -105,7 +105,7 @@ esp_err_t m5tab5_ina226_init(const m5tab5_ina226_config_t* cfg, m5tab5_ina226_t*
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "no ACK from INA226 at 0x%02X (%s)", cfg->i2c_addr, esp_err_to_name(err));
         i2c_bus_device_delete(&dev);
-        return ESP_ERR_NOT_FOUND;
+        return err;
     }
     err = ina226_read_reg16(dev, INA226_REG_DIE_ID, &die);
     if (err != ESP_OK) {
@@ -113,8 +113,9 @@ esp_err_t m5tab5_ina226_init(const m5tab5_ina226_config_t* cfg, m5tab5_ina226_t*
         i2c_bus_device_delete(&dev);
         return err;
     }
-    if (mfr != INA226_MANUFACTURER_ID || die != INA226_DIE_ID) {
-        ESP_LOGE(TAG, "INA226 ID mismatch: mfr=0x%04X die=0x%04X (expected 0x5449/0x2260)", mfr, die);
+    // DIE_ID[3:0] is the silicon revision (TI also ships 0x2261).
+    if (mfr != INA226_MANUFACTURER_ID || (die & 0xFFF0u) != INA226_DIE_ID) {
+        ESP_LOGE(TAG, "INA226 ID mismatch: mfr=0x%04X die=0x%04X (expected 0x5449/0x226x)", mfr, die);
         i2c_bus_device_delete(&dev);
         return ESP_ERR_NOT_FOUND;
     }

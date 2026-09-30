@@ -462,6 +462,12 @@ esp_err_t m5tab5_component::ina226_init()
     return ESP_OK;
 }
 
+esp_err_t m5tab5_component::ina226_read_voltage(float* voltage)
+{
+    if (!ina226_handle_ || !voltage) return ESP_ERR_INVALID_STATE;
+    return m5tab5_ina226_read_bus_voltage(static_cast<m5tab5_ina226_t*>(ina226_handle_), voltage);
+}
+
 esp_err_t m5tab5_component::ina226_read(ina226_reading_t* out)
 {
     if (!ina226_handle_ || !out) return ESP_ERR_INVALID_STATE;

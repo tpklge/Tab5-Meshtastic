@@ -153,6 +153,9 @@ public:
     /// 读取 INA226 的全部测量值，仅在返回 ESP_OK ?@p out 中字段有效?
     esp_err_t ina226_read(ina226_reading_t* out);
 
+    /// Read battery voltage independently of current/power register reads.
+    esp_err_t ina226_read_voltage(float* voltage);
+
     // ── Accessors / 访问?───────────────────────────────────────────────────
 
     const m5tab5_variant_descriptor_t* variant() const;
