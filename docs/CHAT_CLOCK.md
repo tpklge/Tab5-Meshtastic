@@ -59,3 +59,7 @@ Teste do driver real com I2C simulado:
 SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk c++ -std=c++17 -g -fsanitize=address,undefined -Itests/battery_stubs -Itests/ui_stubs -Itests/stubs -Icomponents/m5_tab5_component/src tests/ina226_driver_test.cpp components/m5_tab5_component/src/drivers/ina226/m5tab5_ina226.cpp -o /tmp/tab5-ina226-test
 /tmp/tab5-ina226-test
 ```
+
+### Monitor que responde com IDs diferentes
+
+Se a leitura dos IDs responde, mas nao identifica o INA226 TI, somente o monitor interno em `0x41` pode usar o modo de compatibilidade de tensao, habilitado explicitamente pelo BSP Tab5. O driver confirma a escrita dos campos de conversao por leitura de retorno, sem reset nem calibracao de corrente. Corrente e potencia ficam indisponiveis nesse modo; a interface usa apenas tensao. Isso segue a abordagem de acesso aos registros do [exemplo oficial M5Stack](https://github.com/m5stack/M5Tab5-UserDemo/blob/main/platforms/tab5/components/power_monitor_ina226/src/ina226.cpp), que nao exige manufacturer/die IDs. Nao prova a identidade fisica do componente: os valores reais aparecem no diagnostico como `id:MMMM/DDDD`, junto de `bat:`. O teste simulado inclui esse modo e rejeita falha de leitura/confirmacao da configuracao.

@@ -451,8 +451,11 @@ esp_err_t m5tab5_component::ina226_init()
     cfg.bus_ct                 = Ina226ConvTime::MS_1_1;
     cfg.shunt_ct               = Ina226ConvTime::MS_1_1;
     cfg.mode                   = Ina226Mode::SHUNT_BUS_CONT;
+    cfg.allow_voltage_compatible = true;
 
     esp_err_t err = m5tab5_ina226_init(&cfg, ctx);
+    ina226_manufacturer_ = ctx->manufacturer_id;
+    ina226_die_ = ctx->die_id;
     if (err != ESP_OK) {
         delete ctx;
         return err;
@@ -460,6 +463,12 @@ esp_err_t m5tab5_component::ina226_init()
 
     ina226_handle_ = ctx;
     return ESP_OK;
+}
+
+void m5tab5_component::ina226_get_ids(uint16_t* manufacturer, uint16_t* die) const
+{
+    *manufacturer = ina226_manufacturer_;
+    *die = ina226_die_;
 }
 
 esp_err_t m5tab5_component::ina226_read_voltage(float* voltage)

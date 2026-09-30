@@ -7,7 +7,7 @@
 #include <cmath>
 namespace {
 SemaphoreHandle_t mutex;
-battery_snapshot_t state{false, 0, -1, ESP_ERR_INVALID_STATE};
+battery_snapshot_t state{false, 0, -1, ESP_ERR_INVALID_STATE, 0, 0};
 int64_t last_read_us;
 void worker(void* arg) {
     auto* board = static_cast<m5::tab5::m5tab5_component*>(arg);
@@ -26,6 +26,7 @@ void worker(void* arg) {
         if (error == ESP_OK && !valid_voltage) error = ESP_ERR_INVALID_RESPONSE;
         xSemaphoreTake(mutex, portMAX_DELAY);
         state.error = error;
+        board->ina226_get_ids(&state.manufacturer, &state.die);
         if (valid_voltage) {
             state.valid = true;
             state.voltage = voltage;
@@ -47,7 +48,7 @@ esp_err_t battery_monitor_start(m5::tab5::m5tab5_component* board) {
     return ESP_OK;
 }
 void battery_monitor_snapshot(battery_snapshot_t* out) {
-    *out = {false, 0, -1, ESP_ERR_INVALID_STATE};
+    *out = {false, 0, -1, ESP_ERR_INVALID_STATE, 0, 0};
     if (!mutex || xSemaphoreTake(mutex, 0) != pdTRUE) return;
     *out = state;
     if (esp_timer_get_time() - last_read_us > 15000000) out->valid = false;

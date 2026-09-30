@@ -113,11 +113,28 @@ esp_err_t m5tab5_ina226_init(const m5tab5_ina226_config_t* cfg, m5tab5_ina226_t*
         i2c_bus_device_delete(&dev);
         return err;
     }
+    out->manufacturer_id = mfr;
+    out->die_id = die;
     // DIE_ID[3:0] is the silicon revision (TI also ships 0x2261).
     if (mfr != INA226_MANUFACTURER_ID || (die & 0xFFF0u) != INA226_DIE_ID) {
         ESP_LOGE(TAG, "INA226 ID mismatch: mfr=0x%04X die=0x%04X (expected 0x5449/0x226x)", mfr, die);
-        i2c_bus_device_delete(&dev);
-        return ESP_ERR_NOT_FOUND;
+        if (!cfg->allow_voltage_compatible || cfg->i2c_addr != INA226_I2C_ADDR_TAB5) {
+            i2c_bus_device_delete(&dev);
+            return ESP_ERR_NOT_FOUND;
+        }
+        // The official Tab5 example uses these voltage/config registers without
+        // requiring manufacturer IDs. No reset or current calibration in this path.
+        uint16_t previous = 0, readback = 0;
+        err = ina226_read_reg16(dev, INA226_REG_CONFIG, &previous);
+        uint16_t expected = (previous & 0x7000u) |
+            (ina226_build_config(cfg->averaging, cfg->bus_ct, cfg->shunt_ct, cfg->mode) & 0x0FFFu);
+        if (err == ESP_OK) err = ina226_write_reg16(dev, INA226_REG_CONFIG, expected);
+        if (err == ESP_OK) err = ina226_read_reg16(dev, INA226_REG_CONFIG, &readback);
+        if (err == ESP_OK && (readback & 0x0FFFu) != (expected & 0x0FFFu)) err = ESP_ERR_INVALID_RESPONSE;
+        if (err != ESP_OK) { i2c_bus_device_delete(&dev); return err; }
+        out->dev = dev;
+        ESP_LOGW(TAG, "Tab5 voltage-only monitor: mfr=0x%04X die=0x%04X config=0x%04X", mfr, die, readback);
+        return ESP_OK;
     }
     ESP_LOGI(TAG, "INA226 found at 0x%02X (mfr=0x%04X die=0x%04X)", cfg->i2c_addr, mfr, die);
 
@@ -193,6 +210,7 @@ esp_err_t m5tab5_ina226_read_shunt_voltage(const m5tab5_ina226_t* dev, float* sh
 esp_err_t m5tab5_ina226_read_current(const m5tab5_ina226_t* dev, float* current_a)
 {
     if (!dev || !dev->dev || !current_a) return ESP_ERR_INVALID_ARG;
+    if (dev->current_lsb <= 0) return ESP_ERR_NOT_SUPPORTED;
     uint16_t raw  = 0;
     esp_err_t err = ina226_read_reg16(dev->dev, INA226_REG_CURRENT, &raw);
     if (err != ESP_OK) return err;
@@ -203,6 +221,7 @@ esp_err_t m5tab5_ina226_read_current(const m5tab5_ina226_t* dev, float* current_
 esp_err_t m5tab5_ina226_read_power(const m5tab5_ina226_t* dev, float* power_w)
 {
     if (!dev || !dev->dev || !power_w) return ESP_ERR_INVALID_ARG;
+    if (dev->current_lsb <= 0) return ESP_ERR_NOT_SUPPORTED;
     uint16_t raw  = 0;
     esp_err_t err = ina226_read_reg16(dev->dev, INA226_REG_POWER, &raw);
     if (err != ESP_OK) return err;

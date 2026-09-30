@@ -491,14 +491,14 @@ void refresh_cb(lv_timer_t*)
     if (S.diag_lbl && S.diag_on) {
         const diag_t* d = &s.diag;
         char wc = d->wc_acked ? 'Y' : (d->wc_sent ? 'q' : 'n');
-        char line[176];
+        char line[208];
         snprintf(line, sizeof(line),
-                 "%s  mtu%u ci%u  rd%lu ni%lu df%lu nf%lu pl%lu rt%lu  su%c wc%c wr%lu err%d bat:%x",
+                 "%s  mtu%u ci%u  rd%lu ni%lu df%lu nf%lu pl%lu rt%lu  su%c wc%c wr%lu err%d bat:%x id:%04x/%04x",
                  s.stage, (unsigned)d->mtu, (unsigned)d->conn_itvl,
                  (unsigned long)d->reads, (unsigned long)d->nodeinfo,
                  (unsigned long)d->decfail, (unsigned long)d->notifies,
                  (unsigned long)d->polls, (unsigned long)d->read_tmos,
-                 d->cccd_ok ? 'Y' : 'n', wc, (unsigned long)d->wc_retries, d->last_err, (unsigned)battery.error);
+                 d->cccd_ok ? 'Y' : 'n', wc, (unsigned long)d->wc_retries, d->last_err, (unsigned)battery.error, (unsigned)battery.manufacturer, (unsigned)battery.die);
         set_text(S.diag_lbl, line);
     }
 #endif

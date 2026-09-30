@@ -155,6 +155,7 @@ public:
 
     /// Read battery voltage independently of current/power register reads.
     esp_err_t ina226_read_voltage(float* voltage);
+    void ina226_get_ids(uint16_t* manufacturer, uint16_t* die) const;
 
     // ── Accessors / 访问?───────────────────────────────────────────────────
 
@@ -194,6 +195,7 @@ private:
     lv_indev_t* lv_touch_indev_                        = nullptr;
     void* rtc_handle_ = nullptr;     ///< Opaque m5tab5_rtc_rx8130_t*, allocated in rtc_init() /
                                      ///< 不透明?m5tab5_rtc_rx8130_t*，在 rtc_init() 中分?
+    uint16_t ina226_manufacturer_ = 0, ina226_die_ = 0;
     void* ina226_handle_ = nullptr;  ///< Opaque m5tab5_ina226_t*, allocated in ina226_init() /
                                      ///< 不透明?m5tab5_ina226_t*，在 ina226_init() 中分?
 };

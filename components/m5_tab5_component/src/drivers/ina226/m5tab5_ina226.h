@@ -94,12 +94,15 @@ struct m5tab5_ina226_config_t {
     Ina226ConvTime bus_ct   = Ina226ConvTime::MS_1_1;
     Ina226ConvTime shunt_ct = Ina226ConvTime::MS_1_1;
     Ina226Mode mode         = Ina226Mode::SHUNT_BUS_CONT;
+    // Opt-in only for the dedicated Tab5 monitor, following the M5Stack demo.
+    bool allow_voltage_compatible = false;
 };
 
 // ── Opaque Driver Handle / 不透明驱动句柄
 // ───────────────────────────────────
 struct m5tab5_ina226_t {
     i2c_bus_device_handle_t dev = nullptr;
+    uint16_t manufacturer_id = 0, die_id = 0;
     float current_lsb = 0.0f;  ///< A per LSB, set during init / 每个 LSB 对应的安培数，在初始化阶段设�?
 };
 
