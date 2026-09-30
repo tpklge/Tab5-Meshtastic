@@ -3,3 +3,6 @@
 /sdkconfig
 /sdkconfig.old
 *.tmp
+
+# macOS Finder metadata
+.DS_Store
