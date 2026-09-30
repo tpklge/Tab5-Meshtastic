@@ -1,0 +1,45 @@
+diff --git a/src/FSCommon.cpp b/src/FSCommon.cpp
+index cbeb98d..8df0883 100644
+--- a/src/FSCommon.cpp
++++ b/src/FSCommon.cpp
+@@ -80,7 +80,8 @@ bool renameFile(const char *pathFrom, const char *pathTo)
+ {
+ #ifdef FSCom
+ 
+-#ifdef ARCH_ESP32
++#if defined(ARCH_ESP32) || defined(ARCH_STM32WL)
++    // STM32 LittleFS also supports atomic replacement. copyFile opens in append mode.
+     // take SPI Lock
+     spiLock->lock();
+     // rename was fixed for ESP32 IDF LittleFS in April
+diff --git a/src/SafeFile.cpp b/src/SafeFile.cpp
+index 39436f1..9e0b8c2 100644
+--- a/src/SafeFile.cpp
++++ b/src/SafeFile.cpp
+@@ -23,6 +23,14 @@ static File openFile(const char *filename, bool fullAtomic)
+     //     FSCom.remove(filename);
+     // }
+ 
++#ifdef ARCH_STM32WL
++    // FILE_O_WRITE appends on STM32. A failed previous save may leave a temp file.
++    if (FSCom.exists(filenameTmp.c_str()) && !FSCom.remove(filenameTmp.c_str())) {
++        LOG_ERROR("Cannot remove stale temporary preferences file");
++        return File(FSCom); // unopened; preserve the previous committed file
++    }
++#endif
++
+     // clear any previous LFS errors
+     return FSCom.open(filenameTmp.c_str(), FILE_O_WRITE);
+ }
+diff --git a/src/mesh/NodeDB.cpp b/src/mesh/NodeDB.cpp
+index 9867ff9..0ecb917 100644
+--- a/src/mesh/NodeDB.cpp
++++ b/src/mesh/NodeDB.cpp
+@@ -1490,6 +1490,7 @@ bool NodeDB::saveProto(const char *filename, size_t protoSize, const pb_msgdesc_
+     }
+ 
+     bool writeSucceeded = f.close();
++    okay = okay && writeSucceeded;
+ 
+     if (!okay || !writeSucceeded) {
+         LOG_ERROR("Can't write prefs!");
