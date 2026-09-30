@@ -18,7 +18,7 @@ esp_err_t app_clock_set(struct tm, int) { return ESP_OK; }
 esp_err_t app_clock_set_offset(int) { return ESP_OK; }
 static wifi_snapshot_t wifi_model{};
 static char requested_ssid[33], requested_password[65];
-void wifi_service_snapshot(wifi_snapshot_t* out) { *out = wifi_model; }
+bool wifi_service_snapshot(wifi_snapshot_t* out) { *out = wifi_model; return true; }
 bool wifi_service_scan() { return true; }
 bool wifi_service_disconnect(bool) { return true; }
 bool wifi_service_sync_time() { return true; }

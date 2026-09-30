@@ -30,3 +30,18 @@ Ao obter IP, a aplicacao consulta `pool.ntp.org` por SNTP. **Sincronizar hora pe
 Operacoes de rede rodam em um worker; callbacks de Wi-Fi nao chamam LVGL. Wi-Fi e BLE compartilham a inicializacao idempotente de esp-hosted; desligar Wi-Fi nao desliga o transporte BLE. Validar em hardware: busca, senha incorreta, conexao e IP, NTP, reinicializacao, desligar/reconectar/esquecer e BLE/Wi-Fi simultaneos se usar BLE.
 
 Referencia: [Wi-Fi ESP-IDF 5.4](https://docs.espressif.com/projects/esp-idf/en/v5.4/esp32/api-guides/wifi.html); API SNTP conferida no `esp_netif_sntp.h` da instalacao ESP-IDF 5.4.4.
+
+## Busca Wi-Fi e bateria (correcao posterior)
+
+A busca usa `esp_wifi_scan_start(..., false)` e aguarda `WIFI_EVENT_SCAN_DONE`, com limite de 15 segundos. Desligar Wi-Fi ou conectar cancela uma busca pendente. A tarefa de rede roda na CPU0 com prioridade 2, separada do LVGL na CPU1. A leitura do estado pela interface usa tentativa de mutex sem espera; callbacks de rede apenas notificam a tarefa. A tela mostra a etapa e o tempo decorrido para distinguir inicializacao do C6 de uma busca de redes. Os prazos da busca nao interrompem uma chamada RPC interna travada: nesse caso a interface deve permanecer navegavel e indicar ausencia de resposta. A causa exata do travamento fisico ainda depende de validacao no Tab5.
+
+O topo mostra a bateria **do Tab5**, com tensao medida pelo INA226 interno a cada 5 segundos e porcentagem aproximada (prefixo `~`). A estimativa usa uma curva de tensao de bateria Li-ion de duas celulas (6,0-8,4 V); carga conectada, temperatura, desgaste e carregamento afetam a precisao. Nao e contagem de carga. Falha de leitura, leitura invalida ou amostra com mais de 15 segundos mostra `--`. O monitor roda fora do LVGL e nao acessa o conector Grove. Referencia de hardware: [Tab5 oficial](https://docs.m5stack.com/en/core/Tab5).
+
+Teste do fluxo de busca com driver simulado, incluindo timeout, cancelamento e mutex ocupado:
+
+```sh
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk c++ -std=c++17 -g -fsanitize=address,undefined -Itests/wifi_stubs -Itests/stubs -Imain/app tests/wifi_scan_test.cpp -o /tmp/tab5-wifi-scan-test
+/tmp/tab5-wifi-scan-test
+```
+
+A lentidao observada **no launcher antes de executar este aplicativo** nao pode ser corrigida neste firmware. Os GPIO53/54 usados pelo UART do RAK tambem sao SDA/SCL do Grove; uma busca I2C do launcher nesse conector e uma hipotese a verificar conforme o launcher e sua versao. Nao mudar tensoes ou pinagem sem verificar o modulo/carrier; o teste comparativo e iniciar o launcher com/sem o RAK, desligando o equipamento antes de mudar a conexao.

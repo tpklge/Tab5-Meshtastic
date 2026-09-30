@@ -1,5 +1,7 @@
 #include "app_state.h"
 #include "app_clock.h"
+#include "battery_monitor.h"
+#include <limits>
 #include "message_store.h"
 #include <cassert>
 #include <cstdio>
@@ -55,5 +57,15 @@ int main()
     assert(utc.tm_year == 123 && utc.tm_mon == 11 && utc.tm_mday == 31 && utc.tm_hour == 18 && utc.tm_min == 15);
     t.tm_year = 100; assert(app_clock_to_epoch(t, 0, &epoch)); assert(epoch == 946684800);
     assert(!app_clock_to_epoch(t, 60, &epoch)); // outside RTC year range
-    puts("PASS: own-radio identity ordering; concurrent history snapshots and channel indices; calendar, leap years, UTC offsets and RTC limits.");
+    assert(battery_estimate_percent(0) == -1);
+    assert(battery_estimate_percent(std::numeric_limits<float>::quiet_NaN()) == -1);
+    assert(battery_estimate_percent(6.0f) == 0);
+    assert(battery_estimate_percent(8.4f) == 100);
+    assert(battery_estimate_percent(7.4f) == 40);
+    int previous = 0;
+    for (int mv = 6000; mv <= 8400; mv += 10) {
+        int percent = battery_estimate_percent(mv / 1000.0f);
+        assert(percent >= previous && percent >= 0 && percent <= 100); previous = percent;
+    }
+    puts("PASS: own-radio identity ordering; concurrent history snapshots and channel indices; calendar, leap years, UTC offsets RTC limits and battery estimates.");
 }

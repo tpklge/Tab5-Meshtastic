@@ -8,6 +8,7 @@ struct wifi_snapshot_t {
     bool saved;
     uint8_t count;
     uint32_t generation;
+    int64_t busy_since_us;
     char ssid[33];
     char saved_ssid[33];
     char ip[16];
@@ -17,7 +18,7 @@ struct wifi_snapshot_t {
 };
 esp_err_t wifi_service_init(); // NVS, mutex and queue only; before UI.
 esp_err_t wifi_service_start(); // Worker; after radio transport initialization.
-void wifi_service_snapshot(wifi_snapshot_t* out);
+bool wifi_service_snapshot(wifi_snapshot_t* out);
 bool wifi_service_scan();
 bool wifi_service_connect(const char* ssid, const char* password, bool use_saved);
 bool wifi_service_disconnect(bool forget);

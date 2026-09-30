@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='tab5-chat-tests-') as temp:
         subprocess.run(args, check=True, cwd=root, env=env)
     clock = out/'clock-test'
     run(['c++', *flags, str(root/'tests/chat_clock_test.cpp'), str(root/'main/app/app_state.cpp'),
-         str(root/'main/app/clock_calendar.cpp'), '-o', str(clock)])
+         str(root/'main/app/clock_calendar.cpp'), str(root/'main/board/battery_level.cpp'), '-o', str(clock)])
     run([str(clock)])
     config = out/'lv_conf.h'
     config.write_text('''#pragma once

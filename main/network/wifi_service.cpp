@@ -29,13 +29,15 @@ esp_netif_t* netif;
 bool driver_initialized = false, handlers_registered = false, started = false, net_initialized = false;
 bool desired = false, sntp = false, auto_connect = false;
 unsigned retries = 0;
-int64_t retry_at = 0, connect_deadline = 0, sync_deadline = 0;
+int64_t retry_at = 0, connect_deadline = 0, sync_deadline = 0, scan_deadline = 0;
+std::atomic<bool> scan_done{false};
+std::atomic<uint32_t> scan_result{0};
 std::atomic<bool> got_ip{false}, lost_ip{false};
 std::atomic<unsigned> disconnect_reason{0};
 void lock() { xSemaphoreTake(mutex, portMAX_DELAY); }
 void unlock() { xSemaphoreGive(mutex); }
 void status(const char* text, bool busy = false) {
-    lock(); strlcpy(state.status, text, sizeof(state.status)); state.busy = busy; ++state.generation; unlock();
+    lock(); strlcpy(state.status, text, sizeof(state.status)); state.busy = busy; state.busy_since_us = busy ? esp_timer_get_time() : 0; ++state.generation; unlock();
 }
 void time_status(const char* text) {
     lock(); strlcpy(state.time_status, text, sizeof(state.time_status)); ++state.generation; unlock();
@@ -44,6 +46,10 @@ void failed(const char* operation, esp_err_t err) {
     char text[128]; snprintf(text, sizeof(text), "%s: %s", operation, esp_err_to_name(err)); status(text);
 }
 void event(void*, esp_event_base_t base, int32_t id, void* data) {
+    if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+        scan_result = static_cast<wifi_event_sta_scan_done_t*>(data)->status;
+        scan_done = true;
+    }
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) got_ip = true;
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         disconnect_reason = static_cast<wifi_event_sta_disconnected_t*>(data)->reason;
@@ -62,18 +68,20 @@ esp_err_t ensure_driver() {
     }
     if (!netif) { netif = esp_netif_create_default_wifi_sta(); if (!netif) return ESP_ERR_NO_MEM; }
     if (!handlers_registered) {
-        err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, event, nullptr); if (err != ESP_OK) return err;
+        err = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, event, nullptr); if (err != ESP_OK) return err;
         err = esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, event, nullptr); if (err != ESP_OK) return err;
         handlers_registered = true;
     }
     if (!driver_initialized) {
         err = esp_hosted_init(); if (err != ESP_OK) return err;
         wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
+        status("Conectando ao chip Wi-Fi C6...", true);
         err = esp_wifi_init(&config); if (err != ESP_OK) return err;
         driver_initialized = true;
     }
     err = esp_wifi_set_storage(WIFI_STORAGE_RAM); if (err != ESP_OK) return err;
     err = esp_wifi_set_mode(WIFI_MODE_STA); if (err != ESP_OK) return err;
+    status("Ativando radio Wi-Fi...", true);
     err = esp_wifi_start(); if (err != ESP_OK) return err;
     started = true;
     return ESP_OK;
@@ -95,6 +103,13 @@ void connect_now() {
     status("Conectando ao Wi-Fi...", true);
 }
 void handle(const Command& cmd) {
+    if (scan_deadline && (cmd.action == DISCONNECT || cmd.action == FORGET || cmd.action == CONNECT)) {
+        scan_deadline = 0;
+        esp_wifi_scan_stop();
+        scan_done = false;
+        esp_wifi_clear_ap_list();
+    }
+    if (cmd.action == SCAN && scan_deadline) return;
     if (cmd.action == DISCONNECT || cmd.action == FORGET) {
         desired = false; retry_at = connect_deadline = 0;
         stop_sync();
@@ -129,24 +144,13 @@ void handle(const Command& cmd) {
     if (err != ESP_OK) { failed("Wi-Fi indisponivel", err); return; }
     if (cmd.action == SCAN) {
         status("Buscando redes 2.4 GHz...", true);
+        scan_done = false;
+        scan_result = 0;
+        scan_deadline = esp_timer_get_time() + 15000000;
         wifi_scan_config_t config{}; config.show_hidden = true;
-        err = esp_wifi_scan_start(&config, true);
-        if (err != ESP_OK) { failed("Falha na busca", err); return; }
-        wifi_ap_record_t aps[20]{}; uint16_t count = 20;
-        err = esp_wifi_scan_get_ap_records(&count, aps);
-        if (err != ESP_OK) { esp_wifi_clear_ap_list(); failed("Falha ao ler redes", err); return; }
-        lock(); state.count = 0;
-        for (int i = 0; i < count; ++i) {
-            if (!aps[i].ssid[0]) continue;
-            bool duplicate = false;
-            for (int j = 0; j < state.count; ++j) if (!strcmp(state.networks[j].ssid, (char*)aps[i].ssid)) duplicate = true;
-            if (duplicate) continue;
-            auto& network = state.networks[state.count++];
-            strlcpy(network.ssid, (char*)aps[i].ssid, sizeof(network.ssid));
-            network.rssi = aps[i].rssi; network.secured = aps[i].authmode != WIFI_AUTH_OPEN;
-        }
-        unlock();
-        status("Busca concluida. Escolha uma rede ou informe o nome.");
+        // The hosted RPC must return immediately; completion arrives by event.
+        err = esp_wifi_scan_start(&config, false);
+        if (err != ESP_OK) { scan_deadline = 0; failed("Falha na busca", err); }
         return;
     }
     if (cmd.action == CONNECT) {
@@ -176,12 +180,55 @@ void handle(const Command& cmd) {
         connect_now();
     }
 }
+void poll_scan(int64_t now) {
+    if (!scan_deadline) return;
+    if (!scan_done.exchange(false)) {
+        if (now >= scan_deadline) {
+            scan_deadline = 0;
+            status("Busca expirou. Cancelando...", true);
+            esp_wifi_scan_stop();
+            esp_wifi_clear_ap_list();
+            status("Wi-Fi nao concluiu a busca. Tente novamente.");
+        }
+        return;
+    }
+    scan_deadline = 0;
+    if (scan_result.load()) { esp_wifi_clear_ap_list(); status("Falha na busca. Tente novamente."); return; }
+    // esp-hosted 1.4.0 does not update the count in get_ap_records; query it first.
+    uint16_t count = 0;
+    esp_err_t err = esp_wifi_scan_get_ap_num(&count);
+    if (err != ESP_OK) { failed("Falha ao contar redes", err); return; }
+    if (count > 20) count = 20;
+    static wifi_ap_record_t aps[20]; // Worker-owned, not on its call stack.
+    memset(aps, 0, sizeof(aps));
+    if (count) err = esp_wifi_scan_get_ap_records(&count, aps);
+    else esp_wifi_clear_ap_list();
+    if (err != ESP_OK) { esp_wifi_clear_ap_list(); failed("Falha ao ler redes", err); return; }
+    if (count > 20) count = 20;
+    static wifi_network_t networks[20];
+    memset(networks, 0, sizeof(networks));
+    uint8_t found = 0;
+    for (unsigned i = 0; i < count; ++i) {
+        aps[i].ssid[32] = 0;
+        if (!aps[i].ssid[0]) continue;
+        bool duplicate = false;
+        for (int j = 0; j < found; ++j) if (!strcmp(networks[j].ssid, (char*)aps[i].ssid)) duplicate = true;
+        if (duplicate) continue;
+        auto& network = networks[found++];
+        strlcpy(network.ssid, (char*)aps[i].ssid, sizeof(network.ssid));
+        network.rssi = aps[i].rssi;
+        network.secured = aps[i].authmode != WIFI_AUTH_OPEN;
+    }
+    lock(); state.count = found; memcpy(state.networks, networks, sizeof(networks)); unlock();
+    status(found ? "Busca concluida. Escolha uma rede ou informe o nome." : "Nenhuma rede encontrada. Tente novamente ou informe o nome.");
+}
 void worker(void*) {
     if (auto_connect && saved.ssid[0]) { Command cmd{}; cmd.action = CONNECT; cmd.use_saved = true; handle(cmd); }
     for (;;) {
         Command cmd{};
         if (xQueueReceive(queue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) { handle(cmd); memset(&cmd, 0, sizeof(cmd)); }
         int64_t now = esp_timer_get_time();
+        poll_scan(now);
         if (lost_ip.exchange(false) && desired) {
             lock(); state.connected = false; state.ip[0] = 0; unlock();
             stop_sync(); time_status("Wi-Fi desconectado; hora local mantida.");
@@ -204,7 +251,7 @@ void worker(void*) {
                 begin_sync();
             }
         }
-        if (desired && retry_at && now >= retry_at) { retry_at = 0; connect_now(); }
+        if (desired && !scan_deadline && retry_at && now >= retry_at) { retry_at = 0; connect_now(); }
         if (desired && connect_deadline && now >= connect_deadline) {
             desired = false; connect_deadline = 0; esp_wifi_disconnect(); status("Tempo de conexao esgotado. Confira rede/senha e tente novamente.");
         }
@@ -234,8 +281,12 @@ esp_err_t wifi_service_init() {
     }
     return ESP_OK;
 }
-esp_err_t wifi_service_start() { return xTaskCreate(worker, "wifi_service", 8192, nullptr, 3, &task) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM; }
-void wifi_service_snapshot(wifi_snapshot_t* out) { lock(); *out = state; unlock(); }
+esp_err_t wifi_service_start() { return xTaskCreatePinnedToCore(worker, "wifi_service", 12288, nullptr, 2, &task, 0) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM; }
+bool wifi_service_snapshot(wifi_snapshot_t* out) {
+    // LVGL must never wait for the network worker, even on a driver failure.
+    if (!mutex || !out || xSemaphoreTake(mutex, 0) != pdTRUE) return false;
+    *out = state; unlock(); return true;
+}
 bool wifi_service_scan() { Command cmd{}; cmd.action = SCAN; return submit(cmd); }
 bool wifi_service_connect(const char* ssid, const char* password, bool use_saved) {
     Command cmd{}; cmd.action = CONNECT; cmd.use_saved = use_saved;

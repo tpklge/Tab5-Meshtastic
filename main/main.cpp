@@ -39,6 +39,7 @@
 #include "channel_service.h"
 #include "app_clock.h"
 #include "wifi_service.h"
+#include "battery_monitor.h"
 
 static UartTransport s_uart_transport;
 static MeshSession   s_mesh_session;
@@ -139,6 +140,8 @@ extern "C" void app_main(void)
         ESP_ERROR_CHECK(s_mesh_session.start());
     }
 
+    esp_err_t battery_err = battery_monitor_start(&s_board);
+    if (battery_err != ESP_OK) ESP_LOGW(TAG, "battery monitor: %s", esp_err_to_name(battery_err));
     ESP_ERROR_CHECK(wifi_service_start());
     ESP_LOGI(TAG, "init done; transport=%d", transport);
 }

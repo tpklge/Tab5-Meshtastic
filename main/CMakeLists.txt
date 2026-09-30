@@ -4,6 +4,8 @@ idf_component_register(
         "board/lcd_tools.cpp"
         "board/keyboard.cpp"
         "board/tab5_audio.cpp"
+        "board/battery_monitor.cpp"
+        "board/battery_level.cpp"
         "ui/ui_shell.cpp"
         "ui/screens/settings_screen.cpp"
         "app/app_state.cpp"

@@ -3,6 +3,7 @@
 #include "../theme.h"
 #include <cstring>
 #include <cstdio>
+#include "esp_timer.h"
 
 namespace {
 lv_obj_t *network_list, *status_label, *ip_label, *time_label, *scan_button, *saved_button;
@@ -129,8 +130,18 @@ void wifi_settings_refresh() {
     if (!status_label) return;
     // UI callbacks are serialized by the LVGL lock, including initial construction.
     // Keep large scratch buffers off the small app_main stack used during boot.
-    static wifi_snapshot_t next; wifi_service_snapshot(&next);
-    if (next.generation == generation) return;
+    static wifi_snapshot_t next;
+    if (!wifi_service_snapshot(&next)) return;
+    if (next.generation == generation) {
+        if (next.busy && next.busy_since_us) {
+            unsigned seconds = (unsigned)((esp_timer_get_time() - next.busy_since_us) / 1000000);
+            char text[200];
+            snprintf(text, sizeof(text), "%s (%u s)%s", next.status, seconds,
+                     seconds > 20 ? " Sem resposta; as outras abas continuam disponiveis." : "");
+            if (strcmp(lv_label_get_text(status_label), text)) lv_label_set_text(status_label, text);
+        }
+        return;
+    }
     generation = next.generation;
     bool networks_changed = next.count != snapshot.count || memcmp(next.networks, snapshot.networks, sizeof(next.networks));
     snapshot = next;

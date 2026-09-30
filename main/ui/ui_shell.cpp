@@ -20,6 +20,7 @@
 #include "tab5_audio.h"
 #include "channel_service.h"
 #include "app_clock.h"
+#include "battery_monitor.h"
 
 #include "lvgl.h"
 #include "lvgl_port.h"
@@ -94,6 +95,7 @@ struct ShellState {
     /* chat tab */
     lv_obj_t* chat_list  = nullptr;   /* scrolling bubble area   */
     lv_obj_t* clock_label = nullptr;
+    lv_obj_t* battery_label = nullptr;
     lv_obj_t* chat_channels = nullptr;
     uint8_t channel_map[8] = {};
     uint8_t channel_count = 0;
@@ -457,6 +459,12 @@ void refresh_cb(lv_timer_t*)
     refresh_chat_channels();
     char clock_text[32]; app_clock_format(clock_text, sizeof(clock_text), false);
     set_text(S.clock_label, clock_text);
+    battery_snapshot_t battery; battery_monitor_snapshot(&battery);
+    char battery_text[48];
+    if (battery.valid) snprintf(battery_text, sizeof(battery_text), LV_SYMBOL_BATTERY_FULL " ~%d%%  %.2f V", battery.percent, (double)battery.voltage);
+    else snprintf(battery_text, sizeof(battery_text), LV_SYMBOL_BATTERY_EMPTY " --%%  -- V");
+    set_text(S.battery_label, battery_text);
+    set_color(S.battery_label, battery.valid && battery.percent <= 15 ? C_AMBER : C_HI);
     app_snapshot_t s;
     app_state_snapshot(&s);
 
@@ -1469,6 +1477,7 @@ void build_shell(void)
     label(cnt, LV_SYMBOL_WIFI, FONT_META, C_MID);
     S.count_lbl = label(cnt, "0", FONT_META, C_MID);
 
+    S.battery_label = label(sb, LV_SYMBOL_BATTERY_EMPTY " --%  -- V", FONT_META, C_HI);
     S.clock_label = label(sb, "--:--", FONT_BODY, C_HI);
 
     /* content area + panels */
