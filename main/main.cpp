@@ -14,6 +14,7 @@
  */
 
 #include "esp_log.h"
+#include "esp_system.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -56,6 +57,7 @@ extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "Tab5-Meshtastic v2 — M1 BLE transport + sync engine");
 
+    ESP_LOGI(TAG, "reset reason=%d", (int)esp_reset_reason());
     app_state_init();
 
     /* NVS: settings + the NimBLE bond store. */
@@ -103,6 +105,8 @@ extern "C" void app_main(void)
     app_clock_init();
     ESP_ERROR_CHECK(wifi_service_init());
     ui_start();
+    ESP_LOGI(TAG, "UI ready; main stack minimum free=%u bytes",
+             (unsigned)uxTaskGetStackHighWaterMark(nullptr));
 
     /* Physical Tab5 keyboard (optional accessory) — feeds the chat composer and
      * PIN entry. Best-effort: absence is logged, not fatal. */

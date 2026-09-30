@@ -72,7 +72,9 @@ static void make_clock_section(lv_obj_t* panel)
         lv_obj_t* label = lv_label_create(col);
         lv_label_set_text(label, names[i]);
         lv_obj_set_style_text_color(label, lv_color_hex(C_HI), 0);
-        char options[1600] = {};
+        // Serialized by the LVGL lock; do not consume the boot task stack.
+        static char options[1600];
+        options[0] = 0;
         for (int j = 0; j < counts[i]; ++j) {
             char item[24];
             if (i == 5) {

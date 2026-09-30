@@ -1,12 +1,21 @@
 // Headless LVGL integration test: production widgets and rendering paths.
 #include "../main/ui/ui_shell.cpp"
 #include "../main/ui/screens/wifi_settings.cpp"
+#include "../main/ui/screens/settings_screen.cpp"
 #include "message_store.h"
 #include <cassert>
 
 static app_settings_t preferences{};
 static channel_snapshot_t channel_state{};
 static int beep_count;
+extern "C" esp_err_t settings_store_set_brightness(uint8_t) { return ESP_OK; }
+extern "C" esp_err_t settings_store_set_notif(uint8_t, uint8_t, uint8_t) { return ESP_OK; }
+extern "C" void tab5_audio_set_volume(uint8_t) {}
+bool app_clock_local(struct tm*) { return false; }
+int app_clock_offset_minutes() { return -240; }
+void app_clock_format(char* out, size_t capacity, bool) { snprintf(out, capacity, "--:--"); }
+esp_err_t app_clock_set(struct tm, int) { return ESP_OK; }
+esp_err_t app_clock_set_offset(int) { return ESP_OK; }
 static wifi_snapshot_t wifi_model{};
 static char requested_ssid[33], requested_password[65];
 void wifi_service_snapshot(wifi_snapshot_t* out) { *out = wifi_model; }
@@ -69,7 +78,9 @@ int main() {
     // Exercise actual Wi-Fi editor layout and physical-keyboard routing.
     wifi_model.count = 1; wifi_model.generation = 1;
     strcpy(wifi_model.networks[0].ssid, "Minha rede");
-    wifi_settings_make(lv_screen_active());
+    settings_screen_make(lv_screen_active());
+    assert(lv_dropdown_get_option_count(s_clock_fields[2]) == 100);
+    assert(lv_dropdown_get_option_count(s_clock_fields[5]) == 105);
     configure(nullptr); lv_obj_update_layout(modal);
     assert(!strcmp(lv_textarea_get_text(ssid_input), "Minha rede"));
     assert(lv_textarea_get_password_mode(password_input));
@@ -81,5 +92,5 @@ int main() {
     assert(!strcmp(requested_ssid, "Minha rede") && !strcmp(requested_password, "secret123"));
     configure(nullptr); wifi_settings_leave(); assert(!modal && !focused);
     lv_display_delete(display);
-    puts("PASS: headless LVGL chat: scroll range, viewport preservation, channel filtering, drafts, bounded history, burst notifications and Wi-Fi editor.");
+    puts("PASS: headless LVGL chat: scroll range, viewport preservation, channel filtering, drafts, bounded history, burst notifications and full settings/clock/Wi-Fi construction.");
 }

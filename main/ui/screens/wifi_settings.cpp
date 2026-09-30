@@ -127,7 +127,9 @@ void wifi_settings_make(lv_obj_t* parent) {
 }
 void wifi_settings_refresh() {
     if (!status_label) return;
-    wifi_snapshot_t next; wifi_service_snapshot(&next);
+    // UI callbacks are serialized by the LVGL lock, including initial construction.
+    // Keep large scratch buffers off the small app_main stack used during boot.
+    static wifi_snapshot_t next; wifi_service_snapshot(&next);
     if (next.generation == generation) return;
     generation = next.generation;
     bool networks_changed = next.count != snapshot.count || memcmp(next.networks, snapshot.networks, sizeof(next.networks));
@@ -140,7 +142,8 @@ void wifi_settings_refresh() {
     if (snapshot.busy) lv_obj_add_state(scan_button, LV_STATE_DISABLED); else lv_obj_remove_state(scan_button, LV_STATE_DISABLED);
     if (snapshot.saved && !snapshot.busy) lv_obj_remove_state(saved_button, LV_STATE_DISABLED); else lv_obj_add_state(saved_button, LV_STATE_DISABLED);
     if (networks_changed) {
-        char options[1600] = {};
+        static char options[1600];
+        options[0] = 0;
         for (int i = 0; i < snapshot.count; ++i) {
             char name[33]; strlcpy(name, snapshot.networks[i].ssid, sizeof(name));
             for (char* p = name; *p; ++p) if ((unsigned char)*p < 32) *p = ' ';
