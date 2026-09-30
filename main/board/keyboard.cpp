@@ -2,8 +2,8 @@
  * Tab5-Meshtastic v2 — physical keyboard driver glue. See keyboard.h.
  *
  * The M5Tab5Keyboard driver's poll task calls key_cb() off the UI thread, so we
- * hand events to a queue and let kbd_task() forward them to ui_kbd_feed(), which
- * takes the LVGL lock. We use POLLING (not the hardware INT) deliberately: it
+ * hand events to a queue drained by an LVGL timer. UI edits, sending and
+ * history storage then run on the UI task, never the small keyboard task. We use POLLING (not the hardware INT) deliberately: it
  * needs no GPIO ISR and so can't perturb the esp_hosted/SDIO interrupt path that
  * the cold-boot gate guards (PRD §4). A 20 ms poll is imperceptible for typing.
  */
@@ -17,6 +17,8 @@
 
 #include "m5_tab5_keyboard.h"
 #include "ui_shell.h"
+#include "lvgl.h"
+#include "lvgl_port.h"
 
 static const char* TAG = "kbd";
 
@@ -30,13 +32,13 @@ static void key_cb(m5_tab5_key_event_t ev, void* /*arg*/)
     if (s_queue) xQueueSend(s_queue, &ev, 0);
 }
 
-static void kbd_task(void* /*arg*/)
+static void kbd_timer(lv_timer_t* /*timer*/)
 {
     m5_tab5_key_event_t ev;
-    for (;;) {
-        if (xQueueReceive(s_queue, &ev, portMAX_DELAY) == pdTRUE) {
-            ui_kbd_feed(ev.str_data, ev.str_len, ev.str_modifier);
-        }
+    // Bound work per UI tick; preserve FIFO order without waiting for input.
+    for (unsigned i = 0; i < 4; ++i) {
+        if (xQueueReceive(s_queue, &ev, 0) != pdTRUE) break;
+        ui_kbd_feed(ev.str_data, ev.str_len, ev.str_modifier);
     }
 }
 
@@ -65,5 +67,13 @@ void kbd_start(void)
     s_kb.getVersion(&ver);
     ESP_LOGI(TAG, "physical keyboard ready (FW 0x%02X)", ver);
 
-    xTaskCreate(kbd_task, "kbd_ui", 4096, nullptr, 5, nullptr);
+    // ui_start() has already initialized LVGL. Timer callbacks run on its
+    // 16 KB task; the recursive LVGL lock in ui_kbd_feed remains valid there.
+    if (!lvgl_port_lock(0)) {
+        ESP_LOGE(TAG, "cannot register keyboard UI timer");
+        return;
+    }
+    if (!lv_timer_create(kbd_timer, 20, nullptr))
+        ESP_LOGE(TAG, "keyboard UI timer allocation failed");
+    lvgl_port_unlock();
 }

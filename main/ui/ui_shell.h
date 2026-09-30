@@ -21,7 +21,8 @@ void ui_start(void);
  * surface (chat composer or PIN entry, per the active tab). Bytes are raw ASCII:
  * '\b' = backspace, '\n'/'\r' = submit; printable bytes are inserted. `modifier`
  * follows the Tab5 keyboard convention (0 = none, 1 = Ctrl, 4 = Alt, 5 = both).
- * Safe to call from another task — takes the LVGL lock internally. */
+ * Called by the keyboard queue timer on the LVGL task; takes the recursive
+ * LVGL lock internally. Do not call from a small driver task. */
 void ui_kbd_feed(const char* str, unsigned char len, unsigned char modifier);
 
 #ifdef __cplusplus

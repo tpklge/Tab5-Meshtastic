@@ -63,3 +63,26 @@ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk c++ -std=c++17 -
 ### Monitor que responde com IDs diferentes
 
 Se a leitura dos IDs responde, mas nao identifica o INA226 TI, somente o monitor interno em `0x41` pode usar o modo de compatibilidade de tensao, habilitado explicitamente pelo BSP Tab5. O driver confirma a escrita dos campos de conversao por leitura de retorno, sem reset nem calibracao de corrente. Corrente e potencia ficam indisponiveis nesse modo; a interface usa apenas tensao. Isso segue a abordagem de acesso aos registros do [exemplo oficial M5Stack](https://github.com/m5stack/M5Tab5-UserDemo/blob/main/platforms/tab5/components/power_monitor_ina226/src/ina226.cpp), que nao exige manufacturer/die IDs. Nao prova a identidade fisica do componente: os valores reais aparecem no diagnostico como `id:MMMM/DDDD`, junto de `bat:`. O teste simulado inclui esse modo e rejeita falha de leitura/confirmacao da configuracao.
+
+## Envio pelo teclado físico
+
+Os eventos do teclado agora são consumidos por um timer LVGL (20 ms, até quatro
+por chamada). O callback do driver apenas enfileira as teclas; Enter e demais
+operações de interface executam na tarefa LVGL de 16 KB. Antes, Enter executava
+UI, codificação e persistência do histórico na tarefa `kbd_ui` de apenas 4 KB,
+um caminho suscetível a estouro de pilha. A mudança elimina essa tarefa e mantém
+a ordem das teclas, inclusive Enter. A causa do reinício observado ainda precisa
+ser confirmada pelo teste no aparelho; não foi coletado um panic/backtrace.
+
+Teste do código de despacho com driver e timer simulados (ASan/UBSan):
+
+```sh
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  c++ -std=c++17 -g -fsanitize=address,undefined \
+  -Itests/keyboard_stubs -Itests/ui_stubs -Itests/stubs -Imain/ui \
+  tests/keyboard_dispatch_test.cpp -o /tmp/tab5-keyboard-test
+/tmp/tab5-keyboard-test
+```
+
+Validar no Tab5: digitar e enviar por Enter; enviar pelo botão da tela; confirmar
+recepção em outro nó. Nenhum destes testes de host comprova entrega por LoRa.

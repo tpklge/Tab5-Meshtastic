@@ -1526,7 +1526,7 @@ void ui_start(void)
     lvgl_port_unlock();
 }
 
-/* Physical-keyboard text routing. Called off the keyboard task; we take the
+/* Physical-keyboard text routing. Called by the keyboard timer on LVGL; we take the
  * LVGL lock and drive the same paths the touch UI uses (do_send / the PIN
  * buffer), so input from either source behaves identically.
  *

@@ -5,7 +5,7 @@
  * SDA=0 / SCL=1) — independent of the board's system I2C. We run it in STRING
  * mode (the module hands us decoded characters + a modifier, so we don't carry
  * a keymap) and poll it on a small task. Each decoded chunk is forwarded to the
- * UI layer via ui_kbd_feed(), which routes it to whichever surface is focused
+ * UI task through a bounded queue and an LVGL timer, then ui_kbd_feed(), which routes it to whichever surface is focused
  * (chat composer or PIN entry).
  *
  * Init is best-effort: if the keyboard isn't attached, kbd_start() logs and
@@ -17,8 +17,8 @@
 extern "C" {
 #endif
 
-/* Bring up the physical keyboard and start its input task. Call once after the
- * UI shell exists (ui_start()) — the input task drives UI objects. Non-fatal if
+/* Bring up the physical keyboard and register its UI timer. Call once after the
+ * UI shell exists (ui_start()). The driver only queues input. Non-fatal if
  * no keyboard is present. */
 void kbd_start(void);
 
