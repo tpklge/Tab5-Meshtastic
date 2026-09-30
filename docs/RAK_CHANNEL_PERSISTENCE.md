@@ -63,3 +63,14 @@ filesystem em memória reproduzindo o modo append do STM32 e o schema nanopb rea
 Não testa fisicamente flash, alimentação nem firmware em execução. Validar no RAK:
 salvar um canal, reiniciar aplicativo, reler; em seguida reiniciar também o rádio e
 reler novamente. Nenhum teste abre serial, grava dispositivos ou publica no GitHub.
+
+## Compilação realizada
+
+`pio run -e rak3172`: SUCCESS, sem gravação de dispositivo.
+RAM: consultar `build/rak3172/build.log`; flash reportada: 173636 / 233472 bytes.
+Binário: `build/rak3172/firmware-rak3172-2.7.26-channel-persistence.bin` (174012 bytes).
+SHA-256: `deec884b355b377d62793061e9b5cfa6d160b1654ecc9839818a20d6fcc036f2`.
+Base: commit RAK `a6641d3` + patch registrado no projeto Tab5 em `f3273c0`.
+A versão interna continua `2.7.26.a6641d3`; identificar a correção pelo nome/hash
+acima. O arquivo é para o RAK3172H via ST-Link em `0x08000000`, conforme o README
+do rádio. **Não é OTA do Tab5.** Validado cabeçalho vetorial STM32 e limite de flash.
