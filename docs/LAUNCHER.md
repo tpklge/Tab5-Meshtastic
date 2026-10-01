@@ -1,5 +1,13 @@
 # M5Launcher — OTA, Backup and Restore
 
+> Device check (2026-10-01): this Tab5 currently has a Launcher-managed
+> `tab5me` app partition of **1600 KiB** at `0x1a0000`. The `partitions.csv`
+> below describes a standalone full-flash installation; it is not the table
+> used by the running Launcher. OTA app binaries for this installation must be
+> at most 1,638,400 bytes. The recovery build uses size optimization and a
+> 16 KiB main-task stack; do not select the older `d46a978` OTA image, which
+> has a 4 KiB main-task stack and crashes during display startup.
+
 ## Overview
 
 The M5Launcher (https://github.com/bmorcelli/Launcher) allows installing and
