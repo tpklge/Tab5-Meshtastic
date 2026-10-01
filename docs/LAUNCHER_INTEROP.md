@@ -15,6 +15,14 @@ usa `Wire` e desabilita a busca do CardKB2 no Grove GPIO53/54, ocupado pelo
 RAK UART neste equipamento. Essa ultima mudanca remove suporte ao CardKB2
 externo **somente no Launcher customizado**; nao altera nossa aplicacao.
 
+O mesmo patch corrige o fluxo Wi-Fi da versao 2.8.0: depois de um timeout, a
+opcao Retry cancela a tentativa anterior e inicia outra; Change Password
+permite substituir uma senha salva no Launcher. O prazo de conexao sobe para
+20 segundos e a falha mostra o codigo numerico de desconexao ou a ausencia de
+IP. O log nao imprime mais a senha digitada. A rede que falhou no Launcher
+conecta normalmente pela aplicacao, o que orienta o diagnostico para esse
+fluxo, mas a correcao ainda precisa de validacao no hardware.
+
 O Launcher 2.8.0 nao tem a chave NVS `launcher/hosted_st` encontrada na branch
 atual. Nossa aplicacao nao deve altera-la para tentar recuperar essa versao.
 Ela continua usando o modo Character do A164 enquanto roda e restaura modo

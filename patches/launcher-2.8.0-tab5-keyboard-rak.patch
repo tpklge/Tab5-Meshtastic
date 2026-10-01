@@ -45,3 +45,90 @@ index 9694291..4f3c2b8 100644
  	XPowersLib
  	GFX Library for Arduino
 -
+diff --git a/src/idf/idf_wifi.cpp b/src/idf/idf_wifi.cpp
+index d23926e..637fb38 100644
+--- a/src/idf/idf_wifi.cpp
++++ b/src/idf/idf_wifi.cpp
+@@ -267,6 +267,11 @@ LauncherWifiConnectState launcherWifiConnectStatus(
+         wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms)
+     );
+     if ((bits & WIFI_CONNECTED_BIT) != 0) return LauncherWifiConnectState::Connected;
++    if (staHasIpAddress()) {
++        expectingConnection = false;
++        xEventGroupSetBits(wifiEvents, WIFI_CONNECTED_BIT);
++        return LauncherWifiConnectState::Connected;
++    }
+     if ((bits & WIFI_FAIL_BIT) != 0) {
+         if (isWrongPasswordReason(lastDisconnectReason)) return LauncherWifiConnectState::WrongPassword;
+         return LauncherWifiConnectState::Failed;
+@@ -274,6 +279,16 @@ LauncherWifiConnectState launcherWifiConnectStatus(
+     return LauncherWifiConnectState::Pending;
+ }
+ 
++void launcherWifiAbortConnect() {
++    expectingConnection = false;
++    autoReconnect = false;
++    if (reconnectTimer) esp_timer_stop(reconnectTimer);
++    if (wifiEvents) xEventGroupClearBits(wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
++    esp_wifi_disconnect();
++}
++
++int launcherWifiLastDisconnectReason() { return static_cast<int>(lastDisconnectReason); }
++
+ bool launcherWifiConnect(const char *ssid, const char *password, uint32_t timeout_ms) {
+     return launcherWifiConnectStatus(ssid, password, timeout_ms) == LauncherWifiConnectState::Connected;
+ }
+diff --git a/src/idf/idf_wifi.h b/src/idf/idf_wifi.h
+index bcd0471..9b80d1f 100644
+--- a/src/idf/idf_wifi.h
++++ b/src/idf/idf_wifi.h
+@@ -27,6 +27,8 @@ LauncherWifiConnectState launcherWifiConnectStatus(
+     const char *ssid, const char *password, uint32_t timeout_ms
+ );
+ bool launcherWifiConnect(const char *ssid, const char *password, uint32_t timeout_ms);
++void launcherWifiAbortConnect();
++int launcherWifiLastDisconnectReason();
+ int launcherWifiScan(std::vector<LauncherWifiAp> &out);
+ bool launcherWifiStartAp(const char *ssid, const char *password, uint8_t channel, uint8_t max_clients);
+ bool launcherWifiStop();
+diff --git a/src/onlineLauncher.cpp b/src/onlineLauncher.cpp
+index 1f32593..08d6ba8 100644
+--- a/src/onlineLauncher.cpp
++++ b/src/onlineLauncher.cpp
+@@ -20,7 +20,7 @@
+ 
+ #define M5_SERVER_PATH "https://m5burner-cdn.m5stack.com/firmware/"
+ 
+-constexpr int kWifiConnectAttempts = 20;
++constexpr int kWifiConnectAttempts = 40;
+ 
+ /***************************************************************************************
+ ** Function name: wifiConnect
+@@ -55,7 +55,7 @@ bool wifiConnect(const String &ssid, int encryptation, bool isAP) {
+             if (!found) {
+                 if (setWifiCredential(ssid, pwd)) {
+                     found = true;
+-                    launcherConsolePrintf("wifiConnect: ssid->%s, pwd->%s\n", ssid.c_str(), pwd.c_str());
++                    launcherConsolePrintf("wifiConnect: ssid->%s\n", ssid.c_str());
+                     saveConfigs();
+                 } else {
+                     launcherConsolePrintln("wifiConnect: failed to store new WiFi entry");
+@@ -88,9 +88,16 @@ bool wifiConnect(const String &ssid, int encryptation, bool isAP) {
+             tftprint(".", 10);
+             count++;
+             if (connectState == LauncherWifiConnectState::Failed || count > kWifiConnectAttempts) {
++                int reason = launcherWifiLastDisconnectReason();
++                launcherConsolePrintf("Wi-Fi connection failed: state=%d reason=%d\n",
++                                      static_cast<int>(connectState), reason);
++                launcherWifiAbortConnect();
++                tftprint(reason ? "Falha Wi-Fi (motivo " + String(reason) + ")"
++                                : "Tempo esgotado sem IP", 10);
+                 options = {
+-                    {"Retry",     [&]() { yield(); }            },
+-                    {"Main Menu", [&]() { returnToMenu = true; }},
++                    {"Retry",           [&]() { wrongPass = false; }},
++                    {"Change Password", [&]() { wrongPass = true; }},
++                    {"Main Menu",       [&]() { returnToMenu = true; }},
+                 };
+                 loopOptions(options);
+                 if (!returnToMenu) goto Retry;
