@@ -22,6 +22,9 @@ extern "C" {
  * no keyboard is present. */
 void kbd_start(void);
 
+/* Restore the keyboard controller's normal mode before rebooting to launcher. */
+void kbd_prepare_restart(void);
+
 #ifdef __cplusplus
 }
 #endif

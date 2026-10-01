@@ -54,6 +54,14 @@ static const char* TAG = "tab5-mesh-v2";
 
 static m5::tab5::m5tab5_component s_board;
 
+static void prepare_launcher_restart(void)
+{
+    kbd_prepare_restart();
+    esp_err_t err = s_board.wlan_power(false);
+    if (err != ESP_OK)
+        ESP_LOGW(TAG, "cannot power down C6 before restart: %s", esp_err_to_name(err));
+}
+
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "Tab5-Meshtastic v2 — M1 BLE transport + sync engine");
@@ -112,6 +120,7 @@ extern "C" void app_main(void)
     /* Physical Tab5 keyboard (optional accessory) — feeds the chat composer and
      * PIN entry. Best-effort: absence is logged, not fatal. */
     kbd_start();
+    ESP_ERROR_CHECK(esp_register_shutdown_handler(prepare_launcher_restart));
 
     /* Audio: uses BSP I2C bus handle (m5tab5_get_sys_i2c_master_bus_handle),
      * no second bus created — safe to init after board.begin(). */

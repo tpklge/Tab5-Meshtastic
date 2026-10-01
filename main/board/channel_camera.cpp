@@ -59,7 +59,7 @@ esp_err_t initialize() {
     // GPIO36: camera XCLK. Timer 0/channel 1 belong to LCD backlight!
     ledc_timer_config_t timer{};
     timer.speed_mode = LEDC_LOW_SPEED_MODE; timer.duty_resolution = LEDC_TIMER_1_BIT;
-    timer.timer_num = LEDC_TIMER_1; timer.freq_hz = 24000000; timer.clk_cfg = LEDC_AUTO_CLK;
+    timer.timer_num = LEDC_TIMER_1; timer.freq_hz = 24000000; timer.clk_cfg = LEDC_USE_PLL_DIV_CLK;
     esp_err_t err = ledc_timer_config(&timer);
     if (err != ESP_OK) { report("Falha no clock da camera (timer LEDC)."); return err; }
     ledc_channel_config_t channel{};

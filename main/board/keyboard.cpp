@@ -24,6 +24,7 @@ static const char* TAG = "kbd";
 
 static m5::M5Tab5Keyboard s_kb;
 static QueueHandle_t s_queue = nullptr;
+static bool s_keyboard_ready = false;
 
 /* Driver poll-task context. Keep it short: just enqueue the decoded string. */
 static void key_cb(m5_tab5_key_event_t ev, void* /*arg*/)
@@ -61,7 +62,12 @@ void kbd_start(void)
     }
 
     s_kb.setInterruptMode(M5_TAB5_KB_INT_MODE_POLLING, 20);  /* 20 ms poll */
-    s_kb.enableStringMode(key_cb, nullptr);                  /* chars + modifier, no keymap */
+    if (s_kb.enableStringMode(key_cb, nullptr) != M5_TAB5_KB_OK) {
+        ESP_LOGE(TAG, "cannot enable keyboard string mode");
+        s_kb.end();
+        return;
+    }
+    s_keyboard_ready = true;
 
     uint8_t ver = 0;
     s_kb.getVersion(&ver);
@@ -76,4 +82,14 @@ void kbd_start(void)
     if (!lv_timer_create(kbd_timer, 20, nullptr))
         ESP_LOGE(TAG, "keyboard UI timer allocation failed");
     lvgl_port_unlock();
+}
+
+void kbd_prepare_restart(void)
+{
+    if (!s_keyboard_ready) return;
+    m5_tab5_kb_err_t err = s_kb.enableNormalMode();
+    if (err != M5_TAB5_KB_OK)
+        ESP_LOGW(TAG, "cannot restore keyboard normal mode (err=%d)", err);
+    s_kb.end();
+    s_keyboard_ready = false;
 }

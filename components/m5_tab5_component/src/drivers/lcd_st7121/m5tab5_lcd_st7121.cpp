@@ -48,7 +48,7 @@ esp_err_t backlight_init()
         .duty_resolution = LEDC_TIMER_12_BIT,
         .timer_num       = LEDC_TIMER_0,
         .freq_hz         = 5000,
-        .clk_cfg         = LEDC_AUTO_CLK,
+        .clk_cfg         = LEDC_USE_PLL_DIV_CLK,
     };
     ESP_RETURN_ON_ERROR(ledc_timer_config(&timer_cfg), m5tab5_driver_log_tag(), "ledc timer config failed");
 
