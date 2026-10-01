@@ -121,3 +121,9 @@ CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=8192
 
 # app_main constructs the LVGL shell, including settings and channel panels.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# Launcher currently allocates a 1600 KiB app partition on this Tab5. Build
+# the OTA image with size optimization so it fits without repartitioning,
+# while retaining the 16 KiB main-task stack needed for LVGL startup.
+# CONFIG_COMPILER_OPTIMIZATION_DEBUG is not set
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
