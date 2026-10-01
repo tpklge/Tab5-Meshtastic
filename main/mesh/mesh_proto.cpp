@@ -62,11 +62,16 @@ size_t mesh_encode_text(const char* text, uint8_t* buf, size_t cap)
 }
 size_t mesh_encode_text_channel(const char* text, uint8_t channel, uint8_t* buf, size_t cap)
 {
+    return mesh_encode_text_channel_id(text, channel, 0, buf, cap);
+}
+size_t mesh_encode_text_channel_id(const char* text, uint8_t channel, uint32_t id, uint8_t* buf, size_t cap)
+{
     if (!text || channel >= 8) return 0;
     meshtastic_ToRadio t    = meshtastic_ToRadio_init_zero;
     t.which_payload_variant = meshtastic_ToRadio_packet_tag;
     meshtastic_MeshPacket* p = &t.packet;
     p->channel                = channel;
+    p->id                     = id;
     p->to                     = 0xffffffff;   /* broadcast */
     p->which_payload_variant  = meshtastic_MeshPacket_decoded_tag;
     p->decoded.portnum        = meshtastic_PortNum_TEXT_MESSAGE_APP;
@@ -121,6 +126,12 @@ bool mesh_decode_fromradio(const uint8_t* data, uint16_t len, mesh_event_t* ev)
         ev->u.config_complete_id  = fr.config_complete_id;
         break;
 
+    case meshtastic_FromRadio_queueStatus_tag:
+        ev->kind = MESH_EV_QUEUE_STATUS;
+        ev->u.tx_status.id = fr.queueStatus.mesh_packet_id;
+        ev->u.tx_status.error = fr.queueStatus.res;
+        break;
+
     case meshtastic_FromRadio_rebooted_tag:
         ev->kind = MESH_EV_REBOOTED;
         break;
@@ -137,7 +148,17 @@ bool mesh_decode_fromradio(const uint8_t* data, uint16_t len, mesh_event_t* ev)
             break;
         }
         const meshtastic_Data* d = &mp->decoded;
-        if (d->portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
+        if (d->portnum == meshtastic_PortNum_ROUTING_APP && d->request_id) {
+            meshtastic_Routing routing = meshtastic_Routing_init_zero;
+            pb_istream_t ps = pb_istream_from_buffer(d->payload.bytes, d->payload.size);
+            if (pb_decode(&ps, meshtastic_Routing_fields, &routing) &&
+                routing.which_variant == meshtastic_Routing_error_reason_tag &&
+                routing.error_reason != meshtastic_Routing_Error_NONE) {
+                ev->kind = MESH_EV_ROUTING_ERROR;
+                ev->u.tx_status.id = d->request_id;
+                ev->u.tx_status.error = routing.error_reason;
+            }
+        } else if (d->portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
             ev->kind         = MESH_EV_TEXT;
             ev->u.text.from  = mp->from;
             ev->u.text.channel = mp->channel;

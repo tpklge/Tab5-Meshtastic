@@ -103,3 +103,15 @@ After Grove cable removal and reinsertion:
 - Sends `want_config_id` and waits for `config_complete_id`
 - The application must NOT restart or reconfigure the RAK at this point
 - The region `ANZ` must be preserved as received from the radio
+
+## Text Send Timing
+
+The RAK firmware rate-limits `TEXT_MESSAGE_APP` to one message every two
+seconds. Immediately after application startup, the radio may complete its
+client configuration before its LoRa transmit path is ready. The Tab5 keeps a
+bounded eight-message UART outbox, waits 30 seconds from session startup, and
+spaces text attempts by 2.3 seconds. Each text carries its own packet ID.
+The app reads `FromRadio.queueStatus` and routing errors, retries explicit
+rejections up to three attempts, and adds the local chat bubble only after
+the RAK confirms queue acceptance. Queue acceptance means the radio accepted
+the packet for transmission; it does not prove receipt by another node.

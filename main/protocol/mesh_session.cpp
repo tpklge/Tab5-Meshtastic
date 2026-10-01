@@ -3,6 +3,7 @@
 #include "mesh_session.h"
 #include "mesh_proto.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -35,10 +36,17 @@ void MeshSession::attach_transport(IMeshTransport* t)
 esp_err_t MeshSession::start()
 {
     if (m_running) return ESP_OK;
+    if (!m_outbox) m_outbox = xQueueCreate(8, sizeof(OutgoingText));
+    if (!m_feedback) m_feedback = xQueueCreate(8, sizeof(TxFeedback));
+    if (!m_outbox || !m_feedback) return ESP_ERR_NO_MEM;
     m_running = true;
     m_config_complete = false;
     m_pending_config_id = 0;
-    xTaskCreatePinnedToCore(session_task, "mesh_session", 4096, this, 5, &m_task, 0);
+    m_started_us = esp_timer_get_time();
+    if (xTaskCreatePinnedToCore(session_task, "mesh_session", 4096, this, 5, &m_task, 0) != pdPASS) {
+        m_running = false;
+        return ESP_ERR_NO_MEM;
+    }
     return ESP_OK;
 }
 
@@ -56,13 +64,85 @@ void MeshSession::session_task(void* arg)
 
 void MeshSession::run_task()
 {
+    constexpr int64_t kRadioWarmupUs = 30000000LL;
+    constexpr int64_t kTextGapUs = 2300000LL; // RAK PhoneAPI rate-limits text at 2 s.
+    constexpr int64_t kAckGraceUs = 1500000LL; // rate-limit Routing error follows QueueStatus.
+    constexpr int64_t kReplyTimeoutUs = 6000000LL;
     while (m_running) {
+        int64_t now = esp_timer_get_time();
         if (m_conn == TRANSPORT_CONN_SYNCING && !m_config_complete) {
-            if (m_pending_config_id == 0 || esp_timer_get_time() - m_config_sent_us > 5000000LL) {
+            if (m_pending_config_id == 0 || now - m_config_sent_us > 5000000LL) {
                 if (m_config_attempts++ < 12) do_send_want_config();
                 else { m_conn = TRANSPORT_CONN_ERROR; app_state_set_conn(CONN_ERROR, "UART sync timeout"); }
             }
         } else m_config_attempts = 0;
+
+        TxFeedback feedback{};
+        while (m_feedback && xQueueReceive(m_feedback, &feedback, 0) == pdTRUE) {
+            if (!m_has_pending_text || feedback.id != m_pending_packet_id) continue;
+            if (feedback.routing_error || feedback.error != 0) {
+                ESP_LOGW(TAG, "text id=%lu rejected by RAK: %s=%d", (unsigned long)feedback.id,
+                         feedback.routing_error ? "routing" : "queue", feedback.error);
+                m_pending_rejected = true;
+                m_retry_same_id = false;
+                m_pending_unconfirmed = false;
+                m_pending_ack_us = 0;
+            } else if (!m_pending_rejected) {
+                m_pending_ack_us = now;
+            }
+        }
+
+        if (m_has_pending_text && m_pending_ack_us && now - m_pending_ack_us >= kAckGraceUs) {
+            app_state_add_channel_message(m_pending_text.from, m_pending_text.text, true, now,
+                                          m_pending_text.channel, true);
+            app_state_set_send_status("Enviado ao radio");
+            ESP_LOGI(TAG, "text id=%lu accepted by RAK", (unsigned long)m_pending_packet_id);
+            m_has_pending_text = false;
+        }
+        if (m_has_pending_text && !m_pending_rejected && m_pending_tx_us &&
+            now - m_pending_tx_us >= kReplyTimeoutUs) {
+            ESP_LOGW(TAG, "text id=%lu got no QueueStatus", (unsigned long)m_pending_packet_id);
+            m_pending_rejected = true;
+            m_retry_same_id = true; // Same ID avoids duplicating a packet accepted without a reply.
+            m_pending_unconfirmed = true;
+        }
+        if (!m_has_pending_text && m_outbox && xQueueReceive(m_outbox, &m_pending_text, 0) == pdTRUE) {
+            m_has_pending_text = true;
+            m_pending_rejected = false;
+            m_retry_same_id = false;
+            m_pending_unconfirmed = false;
+            m_pending_attempts = 0;
+            m_pending_packet_id = 0;
+            m_pending_tx_us = m_pending_ack_us = 0;
+        }
+        if (m_has_pending_text && m_pending_rejected && m_pending_attempts >= 3) {
+            app_state_report_send_failure(m_pending_text.text, m_pending_text.channel,
+                m_pending_unconfirmed ? "Sem confirmacao; confira envio" : "Falha no radio; tente novamente");
+            ESP_LOGE(TAG, "text failed after 3 attempts");
+            m_has_pending_text = false;
+        }
+        if (m_has_pending_text && m_config_complete && m_conn == TRANSPORT_CONN_READY &&
+            now - m_started_us >= kRadioWarmupUs &&
+            (!m_last_text_tx_us || now - m_last_text_tx_us >= kTextGapUs) &&
+            (!m_pending_tx_us || m_pending_rejected)) {
+            uint32_t id = m_retry_same_id ? m_pending_packet_id : 0;
+            while (!id) id = esp_random();
+            m_retry_same_id = false;
+            uint8_t buf[256];
+            size_t len = mesh_encode_text_channel_id(m_pending_text.text, m_pending_text.channel,
+                                                     id, buf, sizeof(buf));
+            esp_err_t err = len ? m_transport->send_toproto(buf, len) : ESP_ERR_INVALID_SIZE;
+            ++m_pending_attempts;
+            m_last_text_tx_us = now;
+            m_pending_tx_us = now;
+            m_pending_ack_us = 0;
+            m_pending_rejected = err != ESP_OK;
+            m_pending_packet_id = id;
+            if (err != ESP_OK) ESP_LOGW(TAG, "text UART enqueue failed: %s", esp_err_to_name(err));
+            else ESP_LOGI(TAG, "text id=%lu queued to RAK (attempt %u)", (unsigned long)id,
+                           (unsigned)m_pending_attempts);
+            app_state_set_send_status(err == ESP_OK ? "Aguardando confirmacao do radio" : "Reenviando ao radio...");
+        }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
@@ -154,6 +234,14 @@ void MeshSession::on_fromradio(const uint8_t* data, size_t len)
         app_state_add_channel_message(ev.u.text.from, ev.u.text.text, /*is_self=*/false, now_us, ev.u.text.channel, true);
         break;
 
+    case MESH_EV_QUEUE_STATUS:
+    case MESH_EV_ROUTING_ERROR:
+        if (m_feedback && ev.u.tx_status.id) {
+            TxFeedback feedback{ev.u.tx_status.id, ev.u.tx_status.error, ev.kind == MESH_EV_ROUTING_ERROR};
+            xQueueSend(m_feedback, &feedback, 0);
+        }
+        break;
+
     case MESH_EV_POSITION:
         app_state_set_node_position(ev.u.position.from, &ev.u.position.pos, now_us);
         break;
@@ -179,6 +267,7 @@ void MeshSession::on_conn_state(transport_conn_t state)
         break;
     case TRANSPORT_CONN_SYNCING:
         app_state_set_conn(CONN_SYNCING, "Syncing...");
+        m_started_us = esp_timer_get_time();
         m_config_complete = false;
         m_pending_config_id = 0;
         app_state_clear_nodes();
@@ -204,16 +293,17 @@ void MeshSession::on_error(transport_err_severity_t sev, const char* msg)
 
 esp_err_t MeshSession::send_text(const char* text)
 {
-    if (!m_transport || !m_config_complete) return ESP_ERR_INVALID_STATE;
-
-    uint8_t buf[256];
-    size_t len = mesh_encode_text_channel(text, settings_store_get()->sel_channel, buf, sizeof(buf));
-    if (len == 0) return ESP_ERR_INVALID_SIZE;
-
-    // Local echo
+    if (!m_transport || !m_config_complete || !m_outbox || !text || !text[0]) return ESP_ERR_INVALID_STATE;
     app_snapshot_t snap;
     app_state_snapshot(&snap);
-    app_state_add_channel_message(snap.my_num, text, /*is_self=*/true, esp_timer_get_time(), settings_store_get()->sel_channel, true);
-
-    return m_transport->send_toproto(buf, len);
+    OutgoingText item{};
+    strlcpy(item.text, text, sizeof(item.text));
+    item.channel = settings_store_get()->sel_channel;
+    item.from = snap.my_num;
+    if (xQueueSend(m_outbox, &item, 0) != pdTRUE) {
+        app_state_set_send_status("Fila cheia; aguarde e tente novamente");
+        return ESP_ERR_TIMEOUT;
+    }
+    app_state_set_send_status("Na fila; aguardando radio");
+    return ESP_OK;
 }

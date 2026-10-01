@@ -31,7 +31,7 @@ extern "C" const app_settings_t* settings_store_get() { return &preferences; }
 extern "C" esp_err_t settings_store_set_channel(uint8_t channel) { preferences.sel_channel = channel; return ESP_OK; }
 void channel_service_snapshot(channel_snapshot_t* out) { *out = channel_state; }
 extern "C" void tab5_audio_beep(audio_pattern_t) { ++beep_count; }
-extern "C" void app_send_text(const char*) {}
+extern "C" int app_send_text(const char*) { return ESP_OK; }
 extern "C" esp_err_t message_store_append(uint32_t, uint32_t, uint32_t, uint8_t, bool, bool, int64_t, int64_t, int16_t, int16_t, const char*) { return ESP_OK; }
 
 int main() {

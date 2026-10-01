@@ -184,17 +184,18 @@ extern "C" void app_power_off(void)
     }
 }
 
-extern "C" void app_send_text(const char* text)
+extern "C" int app_send_text(const char* text)
 {
-    if (!text || !text[0]) return;
+    if (!text || !text[0]) return ESP_ERR_INVALID_ARG;
     channel_snapshot_t channels; channel_service_snapshot(&channels);
     uint8_t selected = settings_store_get()->sel_channel;
     if (selected >= 8 || !channels.known[selected] || channels.channels[selected].role == meshtastic_Channel_Role_DISABLED) {
-        ESP_LOGW(TAG, "selected chat channel unavailable"); return;
+        ESP_LOGW(TAG, "selected chat channel unavailable"); return ESP_ERR_INVALID_STATE;
     }
     if (s_active_transport == 0) {
         ble_transport_send_text(text);
+        return ESP_OK;
     } else {
-        s_mesh_session.send_text(text);
+        return s_mesh_session.send_text(text);
     }
 }

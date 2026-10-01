@@ -31,6 +31,8 @@ typedef enum {
     MESH_EV_TEXT,             /* TEXT_MESSAGE_APP packet                  */
     MESH_EV_POSITION,         /* POSITION_APP packet (live position)      */
     MESH_EV_TELEMETRY,        /* TELEMETRY_APP packet (live metrics)      */
+    MESH_EV_QUEUE_STATUS,     /* radio accepted/rejected a packet         */
+    MESH_EV_ROUTING_ERROR,    /* radio refused a packet after queue reply */
     MESH_EV_OTHER,            /* decoded fine, not a variant we act on    */
     MESH_EV_DECODE_FAIL,      /* protobuf decode failed                   */
 } mesh_event_kind_t;
@@ -83,6 +85,7 @@ typedef struct {
         mesh_text_t     text;                /* MESH_EV_TEXT             */
         struct { uint32_t from; mesh_position_t pos; }     position;   /* MESH_EV_POSITION  */
         struct { uint32_t from; mesh_metrics_t metrics; }  telemetry;  /* MESH_EV_TELEMETRY */
+        struct { uint32_t id; int error; } tx_status;
         int             variant;             /* MESH_EV_OTHER (raw tag)  */
     } u;
 } mesh_event_t;
@@ -96,6 +99,7 @@ size_t mesh_encode_want_config(uint32_t id, uint8_t* buf, size_t cap);
  * written, 0 on failure. */
 size_t mesh_encode_text(const char* text, uint8_t* buf, size_t cap);
 size_t mesh_encode_text_channel(const char* text, uint8_t channel, uint8_t* buf, size_t cap);
+size_t mesh_encode_text_channel_id(const char* text, uint8_t channel, uint32_t id, uint8_t* buf, size_t cap);
 
 /* Decode one FromRadio protobuf. Always fills *ev (kind == MESH_EV_DECODE_FAIL
  * on failure). Returns true if decoding succeeded. */

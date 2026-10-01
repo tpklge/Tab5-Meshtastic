@@ -106,6 +106,8 @@ struct ShellState {
     lv_obj_t* chat_input = nullptr;   /* composer textarea       */
     lv_obj_t* chat_kb    = nullptr;   /* on-screen keyboard      */
     uint32_t  msg_seen   = 0;         /* bubbles already rendered */
+    uint32_t  failed_seen = 0;
+    char      send_status_seen[64] = {};
 
     /* radio tab — onboarding / device picker */
     lv_obj_t* v_manager  = nullptr;   /* saved devices + scan button */
@@ -481,6 +483,17 @@ void refresh_cb(lv_timer_t*)
     set_color(S.battery_label, battery.valid && battery.percent >= 0 && battery.percent <= 15 ? C_AMBER : C_HI);
     app_snapshot_t s;
     app_state_snapshot(&s);
+    if (S.chat_input) {
+        if (strcmp(S.send_status_seen, s.send_status)) {
+            strlcpy(S.send_status_seen, s.send_status, sizeof(S.send_status_seen));
+            lv_textarea_set_placeholder_text(S.chat_input, s.send_status[0] ? s.send_status : "Message the mesh...");
+        }
+        if (s.failed_generation != S.failed_seen && s.failed_channel == settings_store_get()->sel_channel) {
+            S.failed_seen = s.failed_generation;
+            if (!lv_textarea_get_text(S.chat_input)[0])
+                lv_textarea_set_text(S.chat_input, s.failed_text);
+        }
+    }
 
     /* my-node badge + identity */
     set_text(S.my_badge, s.my_short[0] ? s.my_short : "--");
@@ -947,8 +960,7 @@ void do_send(void)
     channel_snapshot_t channels; channel_service_snapshot(&channels);
     uint8_t selected = settings_store_get()->sel_channel;
     if (selected >= 8 || !channels.known[selected] || channels.channels[selected].role == meshtastic_Channel_Role_DISABLED) return;
-    app_send_text(t);
-    lv_textarea_set_text(S.chat_input, "");
+    if (app_send_text(t) == ESP_OK) lv_textarea_set_text(S.chat_input, "");
 }
 
 void ta_event_cb(lv_event_t* e)

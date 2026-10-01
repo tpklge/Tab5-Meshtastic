@@ -85,6 +85,23 @@ void app_state_set_diag(const diag_t* diag)
     unlock();
 }
 
+void app_state_set_send_status(const char* status)
+{
+    lock();
+    copy_str(g.s.send_status, sizeof(g.s.send_status), status);
+    unlock();
+}
+
+void app_state_report_send_failure(const char* text, uint8_t channel, const char* status)
+{
+    lock();
+    copy_str(g.s.send_status, sizeof(g.s.send_status), status);
+    copy_str(g.s.failed_text, sizeof(g.s.failed_text), text);
+    g.s.failed_channel = channel;
+    ++g.s.failed_generation;
+    unlock();
+}
+
 /* Find a node by num, or create a bare record. Returns nullptr only if the DB
  * is full. Sets *created. Caller holds the lock. */
 node_rec_t* find_or_create_locked(uint32_t num, bool* created)

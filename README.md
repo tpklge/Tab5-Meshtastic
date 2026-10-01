@@ -30,6 +30,10 @@ describe the additions implemented in this fork.
 - **Chat by channel** — choose the channel directly in the chat header to filter
   messages and send to that channel. Includes scrolling history, a jump to the
   latest messages, session drafts per channel, and physical/on-screen keyboards.
+  With the RAK on UART, outgoing texts wait for radio startup, are paced to
+  respect the two-second Meshtastic limit, and appear in history after the
+  radio confirms queue acceptance. A refused text is retried; an unconfirmed
+  text is offered back to an empty composer for review.
   The app retains up to 64 messages in RAM and the latest 30 across restarts,
   shared across all channels.
 - **Channel management** — read the radio's eight slots, create secondary channels,

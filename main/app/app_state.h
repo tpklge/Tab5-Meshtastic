@@ -66,6 +66,10 @@ typedef struct {
     char         my_short[8];
     uint32_t     node_count;  /* distinct nodes heard this sync             */
     diag_t       diag;
+    char         send_status[64]; /* UART outbox progress or failure */
+    char         failed_text[233];
+    uint8_t      failed_channel;
+    uint32_t     failed_generation;
 } app_snapshot_t;
 
 /* ---- saved device (PRD §6.1 / §10 Settings) ---- */
@@ -99,6 +103,8 @@ void app_state_init(void);
 void app_state_set_conn(conn_state_t state, const char* stage);
 void app_state_set_myinfo(uint32_t num, const char* long_name, const char* short_name);
 void app_state_set_diag(const diag_t* diag);
+void app_state_set_send_status(const char* status);
+void app_state_report_send_failure(const char* text, uint8_t channel, const char* status);
 
 /* Insert or update a node. Updates snr/last_heard silently; bumps the node
  * generation only on a MEANINGFUL change (new node, or changed name / hops /

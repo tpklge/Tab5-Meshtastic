@@ -4,6 +4,7 @@
 #include "meshtastic/portnums.pb.h"
 #include "meshtastic/admin.pb.h"
 #include "pb_decode.h"
+#include "pb_encode.h"
 #include "quirc.h"
 #include <cassert>
 #include <cstring>
@@ -58,6 +59,41 @@ int main(int argc, char** argv) {
         assert(radio.packet.channel == i && radio.packet.decoded.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP);
     }
     assert(!mesh_encode_text_channel("bad", 8, bytes, sizeof(bytes)));
+    {
+        size_t n = mesh_encode_text_channel_id("primeira", 0, 0x12345678, bytes, sizeof(bytes));
+        assert(n);
+        meshtastic_ToRadio radio{}; auto stream = pb_istream_from_buffer(bytes, n);
+        assert(pb_decode(&stream, meshtastic_ToRadio_fields, &radio));
+        assert(radio.packet.id == 0x12345678 && radio.packet.decoded.payload.size == 8);
+
+        meshtastic_FromRadio status = meshtastic_FromRadio_init_zero;
+        status.which_payload_variant = meshtastic_FromRadio_queueStatus_tag;
+        status.queueStatus.mesh_packet_id = radio.packet.id;
+        status.queueStatus.res = 34;
+        auto encoded = pb_ostream_from_buffer(bytes, sizeof(bytes));
+        assert(pb_encode(&encoded, meshtastic_FromRadio_fields, &status));
+        mesh_event_t ev{};
+        assert(mesh_decode_fromradio(bytes, encoded.bytes_written, &ev));
+        assert(ev.kind == MESH_EV_QUEUE_STATUS && ev.u.tx_status.id == radio.packet.id && ev.u.tx_status.error == 34);
+
+        meshtastic_Routing routing = meshtastic_Routing_init_zero;
+        routing.which_variant = meshtastic_Routing_error_reason_tag;
+        routing.error_reason = meshtastic_Routing_Error_RATE_LIMIT_EXCEEDED;
+        status = meshtastic_FromRadio_init_zero;
+        status.which_payload_variant = meshtastic_FromRadio_packet_tag;
+        status.packet.which_payload_variant = meshtastic_MeshPacket_decoded_tag;
+        status.packet.decoded.portnum = meshtastic_PortNum_ROUTING_APP;
+        status.packet.decoded.request_id = radio.packet.id;
+        auto payload = pb_ostream_from_buffer(status.packet.decoded.payload.bytes,
+                                              sizeof(status.packet.decoded.payload.bytes));
+        assert(pb_encode(&payload, meshtastic_Routing_fields, &routing));
+        status.packet.decoded.payload.size = payload.bytes_written;
+        encoded = pb_ostream_from_buffer(bytes, sizeof(bytes));
+        assert(pb_encode(&encoded, meshtastic_FromRadio_fields, &status));
+        assert(mesh_decode_fromradio(bytes, encoded.bytes_written, &ev));
+        assert(ev.kind == MESH_EV_ROUTING_ERROR && ev.u.tx_status.id == radio.packet.id &&
+               ev.u.tx_status.error == meshtastic_Routing_Error_RATE_LIMIT_EXCEEDED);
+    }
     // Decode an independently generated QR image (Python qrcode encoder).
     if (argc > 2) {
         FILE* image = fopen(argv[2], "rb"); assert(image);
