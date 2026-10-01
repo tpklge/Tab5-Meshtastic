@@ -23,6 +23,13 @@ IP. O log nao imprime mais a senha digitada. A rede que falhou no Launcher
 conecta normalmente pela aplicacao, o que orienta o diagnostico para esse
 fluxo, mas a correcao ainda precisa de validacao no hardware.
 
+Depois da primeira gravacao, Change Password exibiu um SSID com caracteres
+invalidos e motivo 201 (rede nao encontrada). A causa era `wifiConnect` receber
+o SSID por referencia a uma opcao do menu que a propria funcao substituia no
+erro. O patch agora guarda o SSID por valor. Tambem usa o mesmo limiar WPA2 e
+PMF da aplicacao para redes com senha, espera a desconexao anterior por 250 ms
+e distingue ausencia de evento de desconexao do motivo 1.
+
 O Launcher 2.8.0 nao tem a chave NVS `launcher/hosted_st` encontrada na branch
 atual. Nossa aplicacao nao deve altera-la para tentar recuperar essa versao.
 Ela continua usando o modo Character do A164 enquanto roda e restaura modo

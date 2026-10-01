@@ -46,10 +46,38 @@ index 9694291..4f3c2b8 100644
  	GFX Library for Arduino
 -
 diff --git a/src/idf/idf_wifi.cpp b/src/idf/idf_wifi.cpp
-index d23926e..637fb38 100644
+index d23926e..adb6497 100644
 --- a/src/idf/idf_wifi.cpp
 +++ b/src/idf/idf_wifi.cpp
-@@ -267,6 +267,11 @@ LauncherWifiConnectState launcherWifiConnectStatus(
+@@ -34,7 +34,7 @@ bool handlersRegistered = false;
+ bool mdnsStarted = false;
+ bool expectingConnection = false; // true only after esp_wifi_connect() is called
+ int wifiConnectRetryCount = 0;
+-wifi_err_reason_t lastDisconnectReason = WIFI_REASON_UNSPECIFIED;
++wifi_err_reason_t lastDisconnectReason = static_cast<wifi_err_reason_t>(0);
+ // true once we have successfully obtained an IP; enables transparent background
+ // reconnection on a spontaneous drop. Cleared when the user explicitly stops STA.
+ bool autoReconnect = false;
+@@ -237,14 +237,15 @@ LauncherWifiConnectState launcherWifiConnectStatus(
+             password ? password : "",
+             sizeof(config.sta.password)
+         );
+-        config.sta.threshold.authmode = WIFI_AUTH_OPEN;
++        config.sta.threshold.authmode = password && password[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
++        config.sta.pmf_cfg.capable = true;
+         config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
+ 
+         // Disconnect first; expectingConnection is false so the DISCONNECTED
+         // event won't set FAIL_BIT.
+         esp_wifi_disconnect();
+-        vTaskDelay(pdMS_TO_TICKS(100));
+-        lastDisconnectReason = WIFI_REASON_UNSPECIFIED;
++        vTaskDelay(pdMS_TO_TICKS(250));
++        lastDisconnectReason = static_cast<wifi_err_reason_t>(0);
+         xEventGroupClearBits(wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+ 
+         esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &config);
+@@ -267,6 +268,11 @@ LauncherWifiConnectState launcherWifiConnectStatus(
          wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms)
      );
      if ((bits & WIFI_CONNECTED_BIT) != 0) return LauncherWifiConnectState::Connected;
@@ -61,7 +89,7 @@ index d23926e..637fb38 100644
      if ((bits & WIFI_FAIL_BIT) != 0) {
          if (isWrongPasswordReason(lastDisconnectReason)) return LauncherWifiConnectState::WrongPassword;
          return LauncherWifiConnectState::Failed;
-@@ -274,6 +279,16 @@ LauncherWifiConnectState launcherWifiConnectStatus(
+@@ -274,6 +280,16 @@ LauncherWifiConnectState launcherWifiConnectStatus(
      return LauncherWifiConnectState::Pending;
  }
  
@@ -92,10 +120,10 @@ index bcd0471..9b80d1f 100644
  bool launcherWifiStartAp(const char *ssid, const char *password, uint8_t channel, uint8_t max_clients);
  bool launcherWifiStop();
 diff --git a/src/onlineLauncher.cpp b/src/onlineLauncher.cpp
-index 1f32593..08d6ba8 100644
+index 1f32593..28e363e 100644
 --- a/src/onlineLauncher.cpp
 +++ b/src/onlineLauncher.cpp
-@@ -20,7 +20,7 @@
+@@ -20,13 +20,13 @@
  
  #define M5_SERVER_PATH "https://m5burner-cdn.m5stack.com/firmware/"
  
@@ -104,6 +132,13 @@ index 1f32593..08d6ba8 100644
  
  /***************************************************************************************
  ** Function name: wifiConnect
+ ** Description:   Connects to wifiNetwork
+ ***************************************************************************************/
+-bool wifiConnect(const String &ssid, int encryptation, bool isAP) {
++bool wifiConnect(String ssid, int encryptation, bool isAP) {
+     RAM_LOG(isAP ? "wifiConnect-ap-start" : "wifiConnect-sta-start");
+     if (!isAP) {
+         bool found = false;
 @@ -55,7 +55,7 @@ bool wifiConnect(const String &ssid, int encryptation, bool isAP) {
              if (!found) {
                  if (setWifiCredential(ssid, pwd)) {
@@ -132,3 +167,78 @@ index 1f32593..08d6ba8 100644
                  };
                  loopOptions(options);
                  if (!returnToMenu) goto Retry;
+diff --git a/src/onlineLauncher.h b/src/onlineLauncher.h
+index 9fb2040..60913f1 100644
+--- a/src/onlineLauncher.h
++++ b/src/onlineLauncher.h
+@@ -1,35 +1,35 @@
+-#ifndef __ONLINELAUNCHER_H
+-#define __ONLINELAUNCHER_H
+-
+-#include "partition_install_layout.h"
+-#include <ArduinoJson.h>
+-#include <SPIFFS.h>
+-
+-bool installExtFirmware(const String &url);
+-
+-void installFirmware(
+-    String fid, String file, uint32_t app_size, uint32_t app_offset, bool nb,
+-    std::vector<LauncherInstallDataPartition> &dataPartitions, String installedName = ""
+-);
+-void installFirmwareFromManifest(const String &fid, const String &version, String installedName = "");
+-
+-bool connectWifi();
+-bool ensureWifiConnected(const String &ssid = "", int encryptation = 0, bool isAP = false);
+-
+-void ota_function();
+-
+-void downloadFirmware(const String &fid, String file, String fileName, String folder = "/downloads/", const String &version = "", bool autoAdvance = false);
+-void saveDownloadedFirmware(const String &folder, const String &fid, const String &version);
+-bool checkForUpdates();
+-
+-bool wifiConnect(const String &ssid, int encryptation, bool isAP = false);
+-
+-bool GetJsonFromLauncherHub(
+-    uint8_t page = 1, const String &order = "downloads", bool star = false, const String &query = ""
+-);
+-
+-JsonDocument getVersionInfo(const String &fid);
+-
+-bool installFAT_OTA(String file, uint32_t offset, uint32_t size, const char *label);
+-
+-#endif
++#ifndef __ONLINELAUNCHER_H
++#define __ONLINELAUNCHER_H
++
++#include "partition_install_layout.h"
++#include <ArduinoJson.h>
++#include <SPIFFS.h>
++
++bool installExtFirmware(const String &url);
++
++void installFirmware(
++    String fid, String file, uint32_t app_size, uint32_t app_offset, bool nb,
++    std::vector<LauncherInstallDataPartition> &dataPartitions, String installedName = ""
++);
++void installFirmwareFromManifest(const String &fid, const String &version, String installedName = "");
++
++bool connectWifi();
++bool ensureWifiConnected(const String &ssid = "", int encryptation = 0, bool isAP = false);
++
++void ota_function();
++
++void downloadFirmware(const String &fid, String file, String fileName, String folder = "/downloads/", const String &version = "", bool autoAdvance = false);
++void saveDownloadedFirmware(const String &folder, const String &fid, const String &version);
++bool checkForUpdates();
++
++bool wifiConnect(String ssid, int encryptation, bool isAP = false);
++
++bool GetJsonFromLauncherHub(
++    uint8_t page = 1, const String &order = "downloads", bool star = false, const String &query = ""
++);
++
++JsonDocument getVersionInfo(const String &fid);
++
++bool installFAT_OTA(String file, uint32_t offset, uint32_t size, const char *label);
++
++#endif
