@@ -26,6 +26,7 @@
 #include "lvgl_port.h"
 
 #include <esp_log.h>
+#include <esp_system.h>
 #include <esp_timer.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -250,6 +251,19 @@ void set_tab(int i)
 }
 
 void nav_cb(lv_event_t* e) { set_tab((int)(intptr_t)lv_event_get_user_data(e)); }
+
+void exit_cb(lv_event_t*)
+{
+    lv_obj_t* dialog = lv_msgbox_create(nullptr);
+    lv_msgbox_add_title(dialog, "Sair da aplicacao?");
+    lv_msgbox_add_text(dialog, "O Tab5 vai reiniciar. Teclado e Wi-Fi serao liberados para o launcher.");
+    lv_obj_t* cancel = lv_msgbox_add_footer_button(dialog, "Cancelar");
+    lv_obj_add_event_cb(cancel, [](lv_event_t* e) {
+        lv_msgbox_close(static_cast<lv_obj_t*>(lv_event_get_user_data(e)));
+    }, LV_EVENT_CLICKED, dialog);
+    lv_obj_t* confirm = lv_msgbox_add_footer_button(dialog, "Sair e reiniciar");
+    lv_obj_add_event_cb(confirm, [](lv_event_t*) { esp_restart(); }, LV_EVENT_CLICKED, nullptr);
+}
 
 /* Long-press the status bar to reveal/hide the on-screen diagnostics strip
  * (FR-5.1: hidden in "release", summonable on-device since serial resets the P4). */
@@ -1430,6 +1444,16 @@ void build_shell(void)
         label(b, kNavText[i], FONT_META, C_MID);
         S.nav[i] = b;
     }
+
+    lv_obj_t* exit_button = box(rail, M_RAIL_BTN, M_RAIL_BTN);
+    radius(exit_button, M_RAD_L);
+    flex_col(exit_button);
+    lv_obj_set_flex_align(exit_button, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(exit_button, 5, 0);
+    lv_obj_add_flag(exit_button, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(exit_button, exit_cb, LV_EVENT_CLICKED, nullptr);
+    label(exit_button, LV_SYMBOL_POWER, FONT_BODY, C_RED);
+    label(exit_button, "SAIR", FONT_META, C_RED);
 
     /* ---- main column ---- */
     lv_obj_t* col = box(root, 0, 720);
