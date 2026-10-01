@@ -75,6 +75,7 @@ esp_err_t ensure_driver() {
     if (!driver_initialized) {
         err = esp_hosted_init(); if (err != ESP_OK) return err;
         wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
+        config.nvs_enable = false;
         status("Conectando ao chip Wi-Fi C6...", true);
         err = esp_wifi_init(&config); if (err != ESP_OK) return err;
         driver_initialized = true;

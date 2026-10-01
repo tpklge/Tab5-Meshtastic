@@ -15,11 +15,17 @@ inline void (*keyboard_test_callback)(m5_tab5_key_event_t,void*);
 inline bool keyboard_test_normal_mode = false;
 inline bool keyboard_test_ended = false;
 inline bool keyboard_test_polling_stopped = false;
+inline uint8_t keyboard_test_interrupt_config = 0;
+inline unsigned keyboard_test_queue_clears = 0;
+inline unsigned keyboard_test_interrupt_clears = 0;
 namespace m5 {struct M5Tab5Keyboard {
     int begin(int,int,int,int,int,int){return 0;}
     int setInterruptMode(int mode,int=100){if(mode==M5_TAB5_KB_INT_MODE_DISABLED) keyboard_test_polling_stopped=true;return 0;}
     int enableStringMode(decltype(keyboard_test_callback) cb,void*){keyboard_test_callback=cb;return 0;}
     int enableNormalMode(){keyboard_test_normal_mode=true;return 0;}
+    int setInterruptConfig(uint8_t config){keyboard_test_interrupt_config=config;return 0;}
+    int clearEventQueue(){++keyboard_test_queue_clears;return 0;}
+    int clearInterruptStatus(){++keyboard_test_interrupt_clears;return 0;}
     void end(){keyboard_test_ended=true;}
     void getVersion(uint8_t* version){*version=1;}
 };}

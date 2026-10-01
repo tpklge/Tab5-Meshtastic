@@ -23,7 +23,7 @@ inline int esp_netif_get_ip_info(esp_netif_t*, esp_netif_ip_info_t*) { return ES
 #define IPSTR "%u.%u.%u.%u"
 #define IP2STR(p) 1u,2u,3u,4u
 inline int esp_hosted_init() { return ESP_OK; }
-struct wifi_init_config_t {};
+struct wifi_init_config_t { bool nvs_enable = true; };
 #define WIFI_INIT_CONFIG_DEFAULT() wifi_init_config_t{}
 struct wifi_scan_config_t { bool show_hidden; };
 struct wifi_ap_record_t { uint8_t ssid[33]; int8_t rssi; int authmode; };

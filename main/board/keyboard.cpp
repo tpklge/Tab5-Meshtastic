@@ -67,6 +67,17 @@ void kbd_start(void)
         s_kb.end();
         return;
     }
+    // INT_CFG is retained by the keyboard when its mode changes. The Launcher
+    // enables Normal-only (bit 0); String input needs Character (bit 2).
+    if (s_kb.setInterruptConfig(0x04) != M5_TAB5_KB_OK ||
+        s_kb.clearEventQueue() != M5_TAB5_KB_OK ||
+        s_kb.clearInterruptStatus() != M5_TAB5_KB_OK) {
+        ESP_LOGE(TAG, "cannot configure keyboard character interrupts");
+        s_kb.enableNormalMode();
+        s_kb.setInterruptConfig(0x01);
+        s_kb.end();
+        return;
+    }
     s_keyboard_ready = true;
 
     uint8_t ver = 0;
@@ -93,6 +104,15 @@ void kbd_prepare_exit(void)
     m5_tab5_kb_err_t err = s_kb.enableNormalMode();
     if (err != M5_TAB5_KB_OK)
         ESP_LOGW(TAG, "cannot restore keyboard normal mode (err=%d)", err);
+    err = s_kb.setInterruptConfig(0x01);
+    if (err != M5_TAB5_KB_OK)
+        ESP_LOGW(TAG, "cannot restore normal-mode interrupt (err=%d)", err);
+    err = s_kb.clearEventQueue();
+    if (err != M5_TAB5_KB_OK)
+        ESP_LOGW(TAG, "cannot clear keyboard queue (err=%d)", err);
+    err = s_kb.clearInterruptStatus();
+    if (err != M5_TAB5_KB_OK)
+        ESP_LOGW(TAG, "cannot clear keyboard interrupt (err=%d)", err);
     s_kb.end();
     s_keyboard_ready = false;
 }

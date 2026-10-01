@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -158,6 +159,23 @@ extern "C" void app_main(void)
 static void power_off_task(void*)
 {
     prepare_peripherals_for_exit();
+    // Current Launcher latches failed ESP-Hosted bring-up in its shared NVS.
+    // A full power-off gives the C6 a fresh start, so allow one new probe on
+    // the next boot if that guard was previously left in a failed state.
+    nvs_handle_t launcher_nvs = 0;
+    if (nvs_open("launcher", NVS_READWRITE, &launcher_nvs) == ESP_OK) {
+        uint8_t hosted_state = 0;
+        if (nvs_get_u8(launcher_nvs, "hosted_st", &hosted_state) == ESP_OK &&
+            (hosted_state == 1 || hosted_state == 3)) {
+            esp_err_t err = nvs_set_u8(launcher_nvs, "hosted_st", 0);
+            if (err == ESP_OK) err = nvs_commit(launcher_nvs);
+            if (err != ESP_OK)
+                ESP_LOGW(TAG, "cannot rearm Launcher ESP-Hosted probe: %s", esp_err_to_name(err));
+            else
+                ESP_LOGI(TAG, "rearmed Launcher ESP-Hosted probe (previous state=%u)", hosted_state);
+        }
+        nvs_close(launcher_nvs);
+    }
     s_board.power_off();
 }
 
