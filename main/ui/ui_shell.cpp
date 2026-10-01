@@ -26,7 +26,6 @@
 #include "lvgl_port.h"
 
 #include <esp_log.h>
-#include <esp_system.h>
 #include <esp_timer.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -255,14 +254,14 @@ void nav_cb(lv_event_t* e) { set_tab((int)(intptr_t)lv_event_get_user_data(e)); 
 void exit_cb(lv_event_t*)
 {
     lv_obj_t* dialog = lv_msgbox_create(nullptr);
-    lv_msgbox_add_title(dialog, "Sair da aplicacao?");
-    lv_msgbox_add_text(dialog, "O Tab5 vai reiniciar. Teclado e Wi-Fi serao liberados para o launcher.");
+    lv_msgbox_add_title(dialog, "Desligar o Tab5?");
+    lv_msgbox_add_text(dialog, "O Tab5 sera desligado. Ligue novamente pelo botao fisico para abrir o launcher.");
     lv_obj_t* cancel = lv_msgbox_add_footer_button(dialog, "Cancelar");
     lv_obj_add_event_cb(cancel, [](lv_event_t* e) {
         lv_msgbox_close(static_cast<lv_obj_t*>(lv_event_get_user_data(e)));
     }, LV_EVENT_CLICKED, dialog);
-    lv_obj_t* confirm = lv_msgbox_add_footer_button(dialog, "Sair e reiniciar");
-    lv_obj_add_event_cb(confirm, [](lv_event_t*) { esp_restart(); }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* confirm = lv_msgbox_add_footer_button(dialog, "Desligar");
+    lv_obj_add_event_cb(confirm, [](lv_event_t*) { app_power_off(); }, LV_EVENT_CLICKED, nullptr);
 }
 
 /* Long-press the status bar to reveal/hide the on-screen diagnostics strip

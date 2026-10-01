@@ -22,8 +22,8 @@ extern "C" {
  * no keyboard is present. */
 void kbd_start(void);
 
-/* Restore the keyboard controller's normal mode before rebooting to launcher. */
-void kbd_prepare_restart(void);
+/* Stop polling and restore the controller's normal mode before leaving the app. */
+void kbd_prepare_exit(void);
 
 #ifdef __cplusplus
 }

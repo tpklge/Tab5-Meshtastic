@@ -54,12 +54,12 @@ static const char* TAG = "tab5-mesh-v2";
 
 static m5::tab5::m5tab5_component s_board;
 
-static void prepare_launcher_restart(void)
+static void prepare_peripherals_for_exit(void)
 {
-    kbd_prepare_restart();
+    kbd_prepare_exit();
     esp_err_t err = s_board.wlan_power(false);
     if (err != ESP_OK)
-        ESP_LOGW(TAG, "cannot power down C6 before restart: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "cannot power down C6 before exit: %s", esp_err_to_name(err));
 }
 
 extern "C" void app_main(void)
@@ -120,7 +120,7 @@ extern "C" void app_main(void)
     /* Physical Tab5 keyboard (optional accessory) — feeds the chat composer and
      * PIN entry. Best-effort: absence is logged, not fatal. */
     kbd_start();
-    ESP_ERROR_CHECK(esp_register_shutdown_handler(prepare_launcher_restart));
+    ESP_ERROR_CHECK(esp_register_shutdown_handler(prepare_peripherals_for_exit));
 
     /* Audio: uses BSP I2C bus handle (m5tab5_get_sys_i2c_master_bus_handle),
      * no second bus created — safe to init after board.begin(). */
@@ -153,6 +153,24 @@ extern "C" void app_main(void)
     if (battery_err != ESP_OK) ESP_LOGW(TAG, "battery monitor: %s", esp_err_to_name(battery_err));
     ESP_ERROR_CHECK(wifi_service_start());
     ESP_LOGI(TAG, "init done; transport=%d", transport);
+}
+
+static void power_off_task(void*)
+{
+    prepare_peripherals_for_exit();
+    s_board.power_off();
+}
+
+extern "C" void app_power_off(void)
+{
+    static bool shutdown_requested = false;
+    if (shutdown_requested) return;
+    shutdown_requested = true;
+    BaseType_t result = xTaskCreate(power_off_task, "tab5_power_off", 4096, nullptr, 5, nullptr);
+    if (result != pdPASS) {
+        shutdown_requested = false;
+        ESP_LOGE(TAG, "cannot create power-off task");
+    }
 }
 
 extern "C" void app_send_text(const char* text)

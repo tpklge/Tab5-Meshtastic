@@ -16,9 +16,9 @@ int main() {
     assert(received.empty()); // Driver callback never executes UI/send/history.
     on_ui_task=true; keyboard_test_timer(nullptr);assert(received=="abcd");
     keyboard_test_timer(nullptr);assert(received=="abcdef\n");
-    kbd_prepare_restart();
-    assert(keyboard_test_normal_mode && keyboard_test_ended);
-    kbd_prepare_restart(); // Safe when no keyboard is active.
+    kbd_prepare_exit();
+    assert(keyboard_test_polling_stopped && keyboard_test_normal_mode && keyboard_test_ended);
+    kbd_prepare_exit(); // Safe when no keyboard is active.
     keyboard_test_timer(nullptr);assert(received=="abcdef\n");
     puts("PASS: keyboard queues input and Enter; bounded FIFO dispatch exclusively from UI timer.");
 }

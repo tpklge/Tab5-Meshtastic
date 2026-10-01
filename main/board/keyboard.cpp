@@ -84,9 +84,12 @@ void kbd_start(void)
     lvgl_port_unlock();
 }
 
-void kbd_prepare_restart(void)
+void kbd_prepare_exit(void)
 {
     if (!s_keyboard_ready) return;
+    m5_tab5_kb_err_t stop_err = s_kb.setInterruptMode(M5_TAB5_KB_INT_MODE_DISABLED);
+    if (stop_err != M5_TAB5_KB_OK)
+        ESP_LOGW(TAG, "cannot stop keyboard polling (err=%d)", stop_err);
     m5_tab5_kb_err_t err = s_kb.enableNormalMode();
     if (err != M5_TAB5_KB_OK)
         ESP_LOGW(TAG, "cannot restore keyboard normal mode (err=%d)", err);
