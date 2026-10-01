@@ -107,3 +107,15 @@ após alteração LoRa, BLE, áudio/backlight durante leitura e cold boot.
 
 Identidade e edição geral de rádio não fazem parte desta etapa; configurações
 LoRa aqui são somente as recebidas no compartilhamento de canais.
+
+## Diagnóstico de inicialização da câmera
+
+O leitor agora consulta o ID do sensor SC202CS (endereço SCCB `0x36`, registradores
+`0x3107/0x3108`, ID esperado `EB52`) depois de ligar o XCLK e antes de iniciar
+o vídeo. A tela diferencia: clock indisponível, barramento I2C ausente, sensor sem
+resposta, ID diferente e falha posterior do vídeo/ISP. A biblioteca `esp_video`
+recebe a estrutura de configuração CSI inicializada com `xclk_pin=-1`, pois o
+clock de GPIO36 é fornecido pelo Tab5. O código anterior deixava esse campo
+indefinido. O diagnóstico anterior `ESP_FAIL` sozinho não identificava qual
+subetapa havia falhado. Testar no Tab5 após instalar o novo binário; a compilação
+não comprova que a câmera física abre ou decodifica o QR.

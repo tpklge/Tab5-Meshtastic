@@ -205,7 +205,7 @@ esp_err_t esp_video_init(const esp_video_init_config_t *config)
          p < &__esp_cam_sensor_detect_fn_array_end; ++p) {
 #if CONFIG_ESP_VIDEO_ENABLE_MIPI_CSI_VIDEO_DEVICE
         if (p->port == ESP_CAM_SENSOR_MIPI_CSI && config->csi != NULL) {
-            esp_cam_sensor_config_t cfg;
+            esp_cam_sensor_config_t cfg = {0};
             esp_cam_sensor_device_t *cam_dev;
 
             cfg.sccb_handle =
@@ -214,7 +214,11 @@ esp_err_t esp_video_init(const esp_video_init_config_t *config)
                 return ESP_FAIL;
             }
 
-            cfg.reset_pin = config->csi->reset_pin, cfg.pwdn_pin = config->csi->pwdn_pin,
+            // The Tab5 supplies CSI XCLK externally on GPIO36. Leaving this
+            // field uninitialized lets the sensor driver treat a random GPIO
+            // as its clock pin during detection.
+            cfg.xclk_pin = -1;
+            cfg.reset_pin = config->csi->reset_pin, cfg.pwdn_pin = config->csi->pwdn_pin;
             cam_dev = (*(p->detect))((void *)&cfg);
             if (!cam_dev) {
                 ESP_LOGE(TAG, "failed to detect MIPI-CSI camera");

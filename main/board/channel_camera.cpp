@@ -2,6 +2,7 @@
 #include "channel_url.h"
 #include "m5tab5_driver_common.h"
 #include "driver/ledc.h"
+#include "driver/i2c_master.h"
 #include "esp_video_init.h"
 #include "esp_video_device.h"
 #include "linux/videodev2.h"
@@ -28,10 +29,30 @@ char result[CHANNEL_URL_MAX]{}, message[120]{};
 uint16_t* preview;
 uint32_t generation = 0;
 bool initialized = false;
+constexpr uint8_t CAMERA_SCCB_ADDRESS = 0x36;
+constexpr uint16_t CAMERA_EXPECTED_ID = 0xeb52;
 void report(const char* text) {
     xSemaphoreTake(mutex, portMAX_DELAY);
     snprintf(message, sizeof(message), "%s", text);
     xSemaphoreGive(mutex);
+}
+esp_err_t probe_sensor(i2c_master_bus_handle_t bus, uint16_t* id) {
+    i2c_device_config_t config{};
+    config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    config.device_address = CAMERA_SCCB_ADDRESS;
+    config.scl_speed_hz = 400000;
+    i2c_master_dev_handle_t device = nullptr;
+    esp_err_t err = i2c_master_bus_add_device(bus, &config, &device);
+    if (err != ESP_OK) return err;
+    uint8_t high = 0, low = 0;
+    const uint8_t high_reg[] = {0x31, 0x07};
+    const uint8_t low_reg[] = {0x31, 0x08};
+    err = i2c_master_transmit_receive(device, high_reg, sizeof(high_reg), &high, 1, 100);
+    if (err == ESP_OK) err = i2c_master_transmit_receive(device, low_reg, sizeof(low_reg), &low, 1, 100);
+    esp_err_t remove_err = i2c_master_bus_rm_device(device);
+    if (err == ESP_OK) err = remove_err;
+    if (err == ESP_OK) *id = (uint16_t(high) << 8) | low;
+    return err;
 }
 esp_err_t initialize() {
     if (initialized) return ESP_OK;
@@ -39,20 +60,40 @@ esp_err_t initialize() {
     ledc_timer_config_t timer{};
     timer.speed_mode = LEDC_LOW_SPEED_MODE; timer.duty_resolution = LEDC_TIMER_1_BIT;
     timer.timer_num = LEDC_TIMER_1; timer.freq_hz = 24000000; timer.clk_cfg = LEDC_AUTO_CLK;
-    esp_err_t err = ledc_timer_config(&timer); if (err != ESP_OK) return err;
+    esp_err_t err = ledc_timer_config(&timer);
+    if (err != ESP_OK) { report("Falha no clock da camera (timer LEDC)."); return err; }
     ledc_channel_config_t channel{};
     channel.gpio_num = 36; channel.speed_mode = LEDC_LOW_SPEED_MODE;
     channel.channel = LEDC_CHANNEL_2; channel.timer_sel = LEDC_TIMER_1; channel.duty = 1;
-    err = ledc_channel_config(&channel); if (err != ESP_OK) return err;
+    err = ledc_channel_config(&channel);
+    if (err != ESP_OK) { report("Falha no clock da camera (GPIO36)."); return err; }
     vTaskDelay(pdMS_TO_TICKS(20));
     esp_video_init_csi_config_t csi{};
     csi.sccb_config.init_sccb = false;
     csi.sccb_config.i2c_handle = m5::tab5::m5tab5_get_sys_i2c_master_bus_handle();
     csi.sccb_config.freq = 400000; csi.reset_pin = -1; csi.pwdn_pin = -1;
-    if (!csi.sccb_config.i2c_handle) return ESP_ERR_INVALID_STATE;
+    if (!csi.sccb_config.i2c_handle) {
+        report("Barramento I2C da camera indisponivel.");
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint16_t sensor_id = 0;
+    err = probe_sensor(csi.sccb_config.i2c_handle, &sensor_id);
+    if (err != ESP_OK) {
+        ESP_LOGE("channel_camera", "camera SCCB 0x36 failed: %s", esp_err_to_name(err));
+        report("Sensor 0x36 nao responde. Confira a camera do Tab5.");
+        return err;
+    }
+    if (sensor_id != CAMERA_EXPECTED_ID) {
+        char text[120];
+        snprintf(text, sizeof(text), "Sensor de camera ID %04X (esperado EB52).", sensor_id);
+        report(text);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     esp_video_init_config_t config{}; config.csi = &csi;
     err = esp_video_init(&config);
     if (err == ESP_OK) initialized = true;
+    else { ESP_LOGE("channel_camera", "esp_video_init failed after sensor ID %04X: %s", sensor_id, esp_err_to_name(err));
+        report("Sensor OK; falha ao iniciar video/ISP."); }
     return err;
 }
 void scan(void*) {
@@ -66,9 +107,7 @@ void scan(void*) {
         if (!code || !decoded) { report("Memoria insuficiente para QR."); break; }
         report("Iniciando camera...");
         esp_err_t err = initialize();
-        if (err != ESP_OK) {
-            char text[120]; snprintf(text, sizeof(text), "Camera indisponivel: %s", esp_err_to_name(err)); report(text); break;
-        }
+        if (err != ESP_OK) break;
         if (cancel) break;
         fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDONLY);
         if (fd < 0) { report("Nao foi possivel abrir a camera."); break; }
