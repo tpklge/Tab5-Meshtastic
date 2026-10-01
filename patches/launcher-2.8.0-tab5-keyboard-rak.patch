@@ -1,0 +1,47 @@
+diff --git a/boards/m5stack-tab5/interface.cpp b/boards/m5stack-tab5/interface.cpp
+index a8d3235..5693d07 100644
+--- a/boards/m5stack-tab5/interface.cpp
++++ b/boards/m5stack-tab5/interface.cpp
+@@ -49,9 +49,9 @@ static bool tab5KbBegin() {
+         cfg.irq_pin = TAB5_KB_INT;     // library drains events on this INT
+         tab5Kb.config(cfg);
+ 
+-        Wire1.end();
+-        Wire1.begin(TAB5_KB_SDA, TAB5_KB_SCL, tab5Kb.component_config().clock);
+-        if (!tab5KbUnits.add(tab5Kb, Wire1)) return false;
++        Wire.end();
++        Wire.begin(TAB5_KB_SDA, TAB5_KB_SCL, tab5Kb.component_config().clock);
++        if (!tab5KbUnits.add(tab5Kb, Wire)) return false;
+         tab5KbAdded = true;
+     }
+     return tab5KbUnits.begin();
+@@ -119,8 +119,8 @@ static void tab5KbPoll() {
+ void _setup_gpio() {
+ 
+     M5.begin();
+-    launcherWifiInitHostedSdio(SDIO2_CLK, SDIO2_CMD, SDIO2_D0, SDIO2_D1, SDIO2_D2, SDIO2_D3, SDIO2_RST);
+     tab5KbSetup();
++    launcherWifiInitHostedSdio(SDIO2_CLK, SDIO2_CMD, SDIO2_D0, SDIO2_D1, SDIO2_D2, SDIO2_D3, SDIO2_RST);
+ }
+ 
+ /***************************************************************************************
+diff --git a/boards/m5stack-tab5/platformio.ini b/boards/m5stack-tab5/platformio.ini
+index 9694291..4f3c2b8 100644
+--- a/boards/m5stack-tab5/platformio.ini
++++ b/boards/m5stack-tab5/platformio.ini
+@@ -26,9 +26,7 @@ build_flags =
+ 	-DCORE_DEBUG_LEVEL=2
+ 
+ 	-DUSE_M5GFX=1
+-	-DUSE_CARDKB2=1
+-	-DCARDKB2_SDA=53
+-	-DCARDKB2_SCL=54
++	; Grove GPIO53/54 carries the RAK UART, so skip CardKB2 probing there.
+ 
+ 	-DROTATION=3
+ 	-DHAS_BTN=1
+@@ -85,4 +83,3 @@ lib_ignore =
+ 	SensorLib
+ 	XPowersLib
+ 	GFX Library for Arduino
+-

@@ -1,44 +1,31 @@
-# Compatibilidade com o M5Launcher no Tab5
+# Tab5 e Launcher 2.8.0
 
-Analise do codigo publico `bmorcelli/Launcher` em `cd392f28` (branch `main`,
-2026-10-01). O comportamento do firmware instalado pode diferir conforme a versao.
+Codigo analisado: `bmorcelli/Launcher` tag `2.8.0`, commit `4150335`.
+O patch em `patches/launcher-2.8.0-tab5-keyboard-rak.patch` aplica-se a esse
+commit. Ele nao e um firmware OTA da nossa aplicacao.
 
-## Teclado A164
+No Launcher 2.8.0, `_setup_gpio()` chama `launcherWifiInitHostedSdio()` antes de
+`tab5KbSetup()`. Se a inicializacao do C6 demora, falha ou reinicia, o teclado
+interno A164 nao e inicializado a tempo. O teclado usa GPIO0/1 e interrupcao
+GPIO50 no modo Normal, mas a versao 2.8.0 cria o barramento Arduino `Wire1`.
+Na branch atual do Launcher, a mesma rotina usa `Wire`, nao `Wire1`.
 
-O Launcher inicia primeiro uma busca por CardKB2 no Grove (GPIO53/54,
-endereco 0x5F). Se nao encontrar, inicializa o teclado A164 na porta interna
-GPIO0/1, endereco 0x6D, interrupcao GPIO50. Usa o modo **Normal** e habilita
-somente a interrupcao desse modo (`INT_CFG=0x01`).
+O patch de compatibilidade move a inicializacao do A164 antes do ESP-Hosted,
+usa `Wire` e desabilita a busca do CardKB2 no Grove GPIO53/54, ocupado pelo
+RAK UART neste equipamento. Essa ultima mudanca remove suporte ao CardKB2
+externo **somente no Launcher customizado**; nao altera nossa aplicacao.
 
-Nossa aplicacao usa o modo **Character/String** para receber texto pronto.
-O controlador do teclado conserva `INT_CFG` quando muda de modo. O driver local
-mudava para Character sem habilitar a interrupcao correspondente; se o Launcher
-houvesse deixado `INT_CFG=0x01`, a fila Character nao seria lida. Agora, ao
-iniciar, habilitamos `INT_CFG=0x04`; ao sair, paramos o polling, restauramos
-Normal com `INT_CFG=0x01`, limpamos fila e status de interrupcao e liberamos o
-I2C. O desligamento pelo botao SAIR corta a alimentacao em vez de reiniciar.
+O Launcher 2.8.0 nao tem a chave NVS `launcher/hosted_st` encontrada na branch
+atual. Nossa aplicacao nao deve altera-la para tentar recuperar essa versao.
+Ela continua usando o modo Character do A164 enquanto roda e restaura modo
+Normal, configuracao de interrupcao e fila ao sair.
 
-A busca de CardKB2 no Grove pode ser afetada pelo RAK ligado aos mesmos pinos
-GPIO53/54. Isso e uma hipotese para a lentidao anterior do Launcher, nao uma
-causa confirmada da falha do A164. Comparar inicializacao do Launcher com e sem
-RAK ligado, sempre com o Tab5 desligado antes de mudar o cabo.
+O botao SAIR da aplicacao entra em sono profundo sem temporizador nem fontes
+de wakeup configuradas, apaga a tela e desliga C6 e alimentacao externa. Isso
+evita o pulso `PWROFF_PLUSE`, que pode religar a placa imediatamente com USB
+conectado. E uma suspensao de baixo consumo, nao um corte fisico de energia;
+o reset fisico do Tab5 inicia o launcher novamente.
 
-## Wi-Fi do ESP32-C6
-
-O Launcher liga o C6 pelo expansor de I2C durante `M5.begin()` e inicia
-ESP-Hosted por SDIO nos GPIO8-13, com reset GPIO15. A inicializacao do Wi-Fi
-usa `wifi_init_config_t.nvs_enable=false` e `WIFI_STORAGE_RAM`. Nossa aplicacao
-agora usa os mesmos ajustes, evitando salvar configuracao de Wi-Fi no flash.
-
-O Launcher guarda o estado da tentativa ESP-Hosted na NVS compartilhada:
-namespace `launcher`, chave `hosted_st`. O valor 1 indica tentativa em andamento;
-3 indica falha bloqueada. Nesse estado, ele nao tenta inicializar o Wi-Fi
-novamente ate `CFG > Retry WiFi Module` ou `wifi hosted retry` na consola serial.
-Ao usar SAIR, nossa aplicacao desliga o C6 e, se encontrar 1 ou 3, retorna a
-chave a 0 para permitir uma nova tentativa no proximo boot. Se houver uma
-incompatibilidade real de firmware ou ligacao, o Launcher voltara a detectar a
-falha; esse ajuste nao substitui o diagnostico do C6.
-
-Fontes: `boards/m5stack-tab5/interface.cpp`, `boards/m5stack-tab5/platformio.ini`,
-`src/cardkb2.cpp`, `src/idf/idf_wifi.cpp` do Launcher; `src/unit/unit_Tab5Keyboard.cpp`
-da biblioteca M5Unit-KEYBOARD; `src/utility/Power_Class.inl` do M5Unified.
+Fontes: `boards/m5stack-tab5/interface.cpp`, `boards/m5stack-tab5/platformio.ini`
+e `src/idf/idf_wifi.cpp` na tag 2.8.0; comparacao com a branch `main` do
+Launcher e com `M5Unit-KEYBOARD`.

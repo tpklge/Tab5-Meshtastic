@@ -255,7 +255,7 @@ void exit_cb(lv_event_t*)
 {
     lv_obj_t* dialog = lv_msgbox_create(nullptr);
     lv_msgbox_add_title(dialog, "Desligar o Tab5?");
-    lv_msgbox_add_text(dialog, "O Tab5 sera desligado. Ligue novamente pelo botao fisico para abrir o launcher.");
+    lv_msgbox_add_text(dialog, "A tela e os radios serao desligados. Use o botao fisico para voltar ao launcher.");
     lv_obj_t* cancel = lv_msgbox_add_footer_button(dialog, "Cancelar");
     lv_obj_add_event_cb(cancel, [](lv_event_t* e) {
         lv_msgbox_close(static_cast<lv_obj_t*>(lv_event_get_user_data(e)));
