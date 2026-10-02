@@ -105,6 +105,9 @@ size_t mesh_encode_text_channel_id(const char* text, uint8_t channel, uint32_t i
 /* Same but with an explicit destination node (0 = broadcast = 0xFFFFFFFF). */
 size_t mesh_encode_text_to(const char* text, uint32_t to_node, uint8_t channel, uint32_t id, uint8_t* buf, size_t cap);
 
+/* Encode ToRadio{ POSITION_APP with lat/lon } into buf. lat_i/lon_i are 1e-7 degrees. Returns bytes written. */
+size_t mesh_encode_position(int32_t lat_i, int32_t lon_i, uint8_t* buf, size_t cap);
+
 /* Decode one FromRadio protobuf. Always fills *ev (kind == MESH_EV_DECODE_FAIL
  * on failure). Returns true if decoding succeeded. */
 bool mesh_decode_fromradio(const uint8_t* data, uint16_t len, mesh_event_t* ev);

@@ -4,6 +4,7 @@
 #include "tab5_audio.h"
 #include "app_clock.h"
 #include "wifi_settings.h"
+#include "position_service.h"
 #include <cstring>
 #include "../theme.h"
 
@@ -315,6 +316,27 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
 
     wifi_settings_make(panel);
     make_clock_section(panel);
+
+    /* Position via Wi-Fi */
+    {
+        lv_obj_t* pos_row = lv_obj_create(panel);
+        lv_obj_set_size(pos_row, lv_pct(100), LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_opa(pos_row, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(pos_row, 0, 0);
+        lv_obj_set_style_pad_all(pos_row, 8, 0);
+        lv_obj_t* pos_btn = lv_button_create(pos_row);
+        lv_obj_set_size(pos_btn, LV_SIZE_CONTENT, 44);
+        lv_obj_set_style_bg_color(pos_btn, lv_color_hex(C_GREEN), 0);
+        lv_obj_add_event_cb(pos_btn, [](lv_event_t*) {
+            position_service_fetch_and_send();
+        }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_t* pos_lbl = lv_label_create(pos_btn);
+        lv_label_set_text(pos_lbl, LV_SYMBOL_GPS " Enviar posicao via Wi-Fi");
+        lv_obj_set_style_text_color(pos_lbl, lv_color_hex(C_INK), 0);
+        lv_obj_set_style_text_font(pos_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_center(pos_lbl);
+    }
+
     settings_screen_refresh(panel);
     return panel;
 }

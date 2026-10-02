@@ -90,6 +90,30 @@ size_t mesh_encode_text_to(const char* text, uint32_t to_node, uint8_t channel, 
     return os.bytes_written;
 }
 
+size_t mesh_encode_position(int32_t lat_i, int32_t lon_i, uint8_t* buf, size_t cap)
+{
+    meshtastic_Position pos = meshtastic_Position_init_zero;
+    pos.has_latitude_i  = true; pos.latitude_i  = lat_i;
+    pos.has_longitude_i = true; pos.longitude_i = lon_i;
+
+    uint8_t pos_buf[128];
+    pb_ostream_t pos_os = pb_ostream_from_buffer(pos_buf, sizeof(pos_buf));
+    if (!pb_encode(&pos_os, meshtastic_Position_fields, &pos)) return 0;
+
+    meshtastic_ToRadio t    = meshtastic_ToRadio_init_zero;
+    t.which_payload_variant = meshtastic_ToRadio_packet_tag;
+    meshtastic_MeshPacket* p = &t.packet;
+    p->to                     = 0xffffffff;
+    p->which_payload_variant  = meshtastic_MeshPacket_decoded_tag;
+    p->decoded.portnum        = meshtastic_PortNum_POSITION_APP;
+    memcpy(p->decoded.payload.bytes, pos_buf, pos_os.bytes_written);
+    p->decoded.payload.size   = pos_os.bytes_written;
+
+    pb_ostream_t os = pb_ostream_from_buffer(buf, cap);
+    if (!pb_encode(&os, meshtastic_ToRadio_fields, &t)) return 0;
+    return os.bytes_written;
+}
+
 bool mesh_decode_fromradio(const uint8_t* data, uint16_t len, mesh_event_t* ev)
 {
     memset(ev, 0, sizeof(*ev));

@@ -21,6 +21,7 @@
 #include "channel_service.h"
 #include "app_clock.h"
 #include "battery_monitor.h"
+#include "message_store.h"
 
 #include "lvgl.h"
 #include "lvgl_port.h"
@@ -120,6 +121,8 @@ struct ShellState {
     lv_obj_t* v_manager  = nullptr;   /* saved devices + scan button */
     lv_obj_t* v_disco    = nullptr;   /* discovery scan list         */
     lv_obj_t* v_pin      = nullptr;   /* PIN keypad                  */
+    lv_obj_t* v_uart      = nullptr;   /* UART transport status view */
+    lv_obj_t* uart_stage  = nullptr;   /* stage label in UART view   */
     lv_obj_t* mgr_list   = nullptr;
     lv_obj_t* mgr_status = nullptr;
     lv_obj_t* disco_list = nullptr;
@@ -912,6 +915,19 @@ void add_bubble(lv_obj_t* parent, const msg_rec_t* m)
         sender_name(m->from, who, sizeof(who));
         label(col, who, FONT_META, C_MID);
     }
+    if (!m->is_self) {
+        node_rec_t sender_node;
+        if (app_state_get_node(m->from, &sender_node)) {
+            char sig[40];
+            if (sender_node.hops_valid && sender_node.hops > 0)
+                snprintf(sig, sizeof(sig), "SNR %.0f dB · %d hops", (double)sender_node.snr, sender_node.hops);
+            else if (sender_node.hops_valid)
+                snprintf(sig, sizeof(sig), "SNR %.0f dB · direto", (double)sender_node.snr);
+            else
+                snprintf(sig, sizeof(sig), "SNR %.0f dB", (double)sender_node.snr);
+            label(col, sig, FONT_META, C_DIM);
+        }
+    }
 
     lv_obj_t* bub = box(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     bg(bub, m->is_self ? C_GREEN : C_SURF);
@@ -1100,6 +1116,30 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
         lv_obj_scroll_to_y(S.chat_list, LV_COORD_MAX, LV_ANIM_OFF);
     }, LV_EVENT_CLICKED, nullptr);
 
+    lv_obj_t* export_btn = lv_button_create(hdr);
+    lv_obj_center(label(export_btn, LV_SYMBOL_SAVE " Exportar", FONT_META, C_HI));
+    lv_obj_set_size(export_btn, 130, 40);
+    lv_obj_add_event_cb(export_btn, [](lv_event_t*) {
+        static msg_loaded_t buf[200];
+        FILE* f = fopen("/spiffs/chat_export.txt", "w");
+        if (!f) { ESP_LOGE("export", "cannot open /spiffs/chat_export.txt"); return; }
+        uint32_t total = 0, page = 0;
+        do {
+            uint32_t n = message_store_load_page(0xFF, page++, buf, 200);
+            for (uint32_t i = 0; i < n; i++) {
+                long long ts = (long long)buf[i].timestamp_us / 1000000LL;
+                fprintf(f, "[%lld] ch%u !%08lx: %s\n", ts,
+                        (unsigned)buf[i].channel_idx, (unsigned long)buf[i].from_node, buf[i].text);
+            }
+            total += n;
+            if (n < 200) break;
+        } while (page < 50);
+        fclose(f);
+        if (S.chat_input)
+            lv_textarea_set_placeholder_text(S.chat_input,
+                total ? "Exportado: /spiffs/chat_export.txt" : "Nenhuma mensagem para exportar");
+    }, LV_EVENT_CLICKED, nullptr);
+
     /* DM context bar — hidden by default, shown when dm_peer != 0 */
     S.chat_dm_bar = box(hdr, LV_SIZE_CONTENT, 40);
     bg(S.chat_dm_bar, C_SURF);
@@ -1207,6 +1247,16 @@ lv_obj_t* make_btn(lv_obj_t* parent, const char* text, lv_event_cb_t cb, void* u
 
 void radio_show(int view)
 {
+    uint8_t transport = settings_store_get()->transport;
+    if (transport == 1) {
+        /* UART mode: only the UART status view is relevant */
+        if (S.v_manager) lv_obj_add_flag(S.v_manager, LV_OBJ_FLAG_HIDDEN);
+        if (S.v_disco)   lv_obj_add_flag(S.v_disco,   LV_OBJ_FLAG_HIDDEN);
+        if (S.v_pin)     lv_obj_add_flag(S.v_pin,     LV_OBJ_FLAG_HIDDEN);
+        if (S.v_uart)    lv_obj_clear_flag(S.v_uart,  LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    if (S.v_uart) lv_obj_add_flag(S.v_uart, LV_OBJ_FLAG_HIDDEN);
     S.radio_view = view;
     if (S.v_manager) (view == 0 ? lv_obj_clear_flag : lv_obj_add_flag)(S.v_manager, LV_OBJ_FLAG_HIDDEN);
     if (S.v_disco)   (view == 1 ? lv_obj_clear_flag : lv_obj_add_flag)(S.v_disco, LV_OBJ_FLAG_HIDDEN);
@@ -1481,6 +1531,29 @@ lv_obj_t* make_radio_panel(lv_obj_t* parent)
     lv_obj_set_style_pad_row(pv, 16, 0);
     lv_obj_add_flag(pv, LV_OBJ_FLAG_HIDDEN);
     S.v_pin = pv;
+
+    /* --- UART status view (shown when transport == UART) --- */
+    lv_obj_t* uv = box(panel, lv_pct(100), lv_pct(100));
+    flex_col(uv);
+    lv_obj_set_flex_align(uv, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(uv, 24, 0);
+    lv_obj_add_flag(uv, LV_OBJ_FLAG_HIDDEN);
+    S.v_uart = uv;
+    {
+        lv_obj_t* icon = box(uv, 64, 64);
+        bg(icon, C_SURF);
+        radius(icon, M_RAD_L);
+        lv_obj_center(label(icon, LV_SYMBOL_USB, FONT_TITLE, C_GREEN));
+        label(uv, "RAK3172H — Grove UART", FONT_ROW, C_HI);
+        S.uart_stage = label(uv, "Aguardando radio...", FONT_META, C_DIM);
+        lv_obj_t* hint = label(uv,
+            "Verifique: cabo Grove em J5 (porta laranja),\nRAK ligado, baud 115200.",
+            FONT_META, C_MID);
+        lv_label_set_long_mode(hint, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_set_width(hint, 600);
+        lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
+    }
+
     S.pin_dev = label(pv, "Enter PIN", FONT_ROW, C_HI);
     label(pv, "Code shown on your radio (or 123456 if unset)", FONT_META, C_DIM);
     S.pin_disp = label(pv, "______", FONT_TITLE, C_GREEN);
@@ -1546,6 +1619,10 @@ void radio_refresh(void)
     if (S.radio_view == 1) {
         uint32_t gen = app_state_scan_gen();
         if (gen != S.last_scan_gen) { rebuild_discovery(); S.last_scan_gen = gen; }
+    }
+    if (settings_store_get()->transport == 1 && S.uart_stage) {
+        app_snapshot_t s2; app_state_snapshot(&s2);
+        set_text(S.uart_stage, s2.stage);
     }
 }
 

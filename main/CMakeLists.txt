@@ -11,6 +11,7 @@ idf_component_register(
         "app/app_state.cpp"
         "app/app_clock.cpp"
         "network/wifi_service.cpp"
+        "network/position_service.cpp"
         "ui/screens/wifi_settings.cpp"
         "app/clock_calendar.cpp"
         "app/settings.cpp"
@@ -63,6 +64,7 @@ idf_component_register(
         esp_driver_i2c
         esp_driver_ledc
         esp_timer
+        esp_http_client
         spiffs
         esp_rom
         m5_tab5_component

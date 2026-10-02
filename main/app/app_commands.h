@@ -14,6 +14,9 @@ int app_send_dm(const char* text, uint32_t to_node);
 /* Stop peripheral use and power the Tab5 off from a dedicated task. */
 void app_power_off(void);
 
+/* Send our own GPS position to the mesh (lat/lon in 1e-7 degrees). */
+int app_send_position(int32_t lat_i, int32_t lon_i);
+
 #ifdef __cplusplus
 }
 #endif

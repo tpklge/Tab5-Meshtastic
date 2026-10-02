@@ -73,6 +73,7 @@ private:
     uint8_t           m_pending_attempts{0};
     uint32_t          m_pending_packet_id{0};
     std::atomic<int64_t> m_started_us{0};
+    std::atomic<int64_t> m_last_rx_us{0};    /* last FromRadio packet time; 0 = never */
     int64_t           m_last_text_tx_us{0};
     int64_t           m_pending_tx_us{0};
     int64_t           m_pending_ack_us{0};

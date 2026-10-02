@@ -113,13 +113,27 @@ void scan(void*) {
         if (fd < 0) { report("Nao foi possivel abrir a camera."); break; }
         v4l2_format format{}; format.type = type;
         if (ioctl(fd, VIDIOC_G_FMT, &format)) { report("Falha ao consultar formato da camera."); break; }
+        /* Try RGB565 first; fall back to YUYV (YUV4:2:2) if refused */
         format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565;
-        if (ioctl(fd, VIDIOC_S_FMT, &format) || ioctl(fd, VIDIOC_G_FMT, &format)) { report("Camera nao oferece RGB565."); break; }
+        ioctl(fd, VIDIOC_S_FMT, &format);
+        ioctl(fd, VIDIOC_G_FMT, &format);
+        bool is_yuyv = (format.fmt.pix.pixelformat != V4L2_PIX_FMT_RGB565);
+        if (is_yuyv) {
+            format.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+            ioctl(fd, VIDIOC_S_FMT, &format);
+            ioctl(fd, VIDIOC_G_FMT, &format);
+            if (format.fmt.pix.pixelformat != V4L2_PIX_FMT_YUYV) {
+                char msg[80];
+                snprintf(msg, sizeof(msg), "Camera: formato nao suportado (%08lx).", (unsigned long)format.fmt.pix.pixelformat);
+                report(msg); break;
+            }
+        }
         const unsigned width = format.fmt.pix.width, height = format.fmt.pix.height;
         const unsigned stride = format.fmt.pix.bytesperline ? format.fmt.pix.bytesperline : width * 2;
-        if (width < 640 || height < 360 || width > 1600 || height > 1200) { report("Resolucao de camera nao suportada."); break; }
+        if (width < 320 || height < 180 || width > 1920 || height > 1200) { report("Resolucao de camera nao suportada."); break; }
         decoder = quirc_new();
-        if (!decoder || quirc_resize(decoder, 640, 360) < 0) { report("Memoria insuficiente para ler QR."); break; }
+        /* Use full camera resolution so fine QR details on phone screens survive. */
+        if (!decoder || quirc_resize(decoder, (int)width, (int)height) < 0) { report("Memoria insuficiente para ler QR."); break; }
         v4l2_requestbuffers req{}; req.count = 2; req.type = type; req.memory = V4L2_MEMORY_MMAP;
         if (ioctl(fd, VIDIOC_REQBUFS, &req) || req.count < 2) { report("Falha ao alocar quadros da camera."); break; }
         bool mapped = true;
@@ -143,17 +157,23 @@ void scan(void*) {
             last_frame = esp_timer_get_time();
             if (buf.index >= 2) { report("Quadro de camera invalido."); break; }
             uint8_t* gray = quirc_begin(decoder, nullptr, nullptr);
-            // Scale with actual negotiated stride; decoding is independent of LCD rotation.
-            for (unsigned y = 0; y < 360; ++y) {
-                const auto row = reinterpret_cast<const uint16_t*>(buffers[buf.index] + (y * height / 360) * stride);
-                for (unsigned x = 0; x < 640; ++x) {
-                    unsigned c = row[x * width / 640];
-                    gray[y * 640 + x] = (((c >> 11) & 31) * 77 * 8 + ((c >> 5) & 63) * 150 * 4 + (c & 31) * 29 * 8) >> 8;
+            /* Extract luma at full native resolution for best QR detection. */
+            for (unsigned y = 0; y < height; ++y) {
+                const uint8_t* row = buffers[buf.index] + y * stride;
+                if (is_yuyv) {
+                    for (unsigned x = 0; x < width; ++x)
+                        gray[y * width + x] = row[2 * x];   /* Y byte in YUY V */
+                } else {
+                    for (unsigned x = 0; x < width; ++x) {
+                        uint16_t c = reinterpret_cast<const uint16_t*>(row)[x];
+                        gray[y * width + x] = (uint8_t)(((c >> 11) & 31) * 77 / 8 + ((c >> 5) & 63) * 150 / 16 + (c & 31) * 29 / 8);
+                    }
                 }
             }
+            /* Downsample gray to preview (QR_PREVIEW_W x QR_PREVIEW_H). */
             xSemaphoreTake(mutex, portMAX_DELAY);
             for (unsigned y = 0; y < QR_PREVIEW_H; ++y) for (unsigned x = 0; x < QR_PREVIEW_W; ++x) {
-                unsigned c = gray[(y * 2) * 640 + x * 2];
+                unsigned c = gray[(y * height / QR_PREVIEW_H) * width + (x * width / QR_PREVIEW_W)];
                 preview[y * QR_PREVIEW_W + x] = ((c >> 3) << 11) | ((c >> 2) << 5) | (c >> 3);
             }
             ++generation; xSemaphoreGive(mutex);
@@ -186,7 +206,6 @@ void scan(void*) {
     if (fd >= 0) close(fd);
     if (decoder) quirc_destroy(decoder);
     delete code; delete decoded;
-    initialized = false;   /* force full re-init on next capture to avoid stale ISP state */
     running = false;
     vTaskDelete(nullptr);
 }

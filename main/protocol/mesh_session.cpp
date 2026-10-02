@@ -77,6 +77,20 @@ void MeshSession::run_task()
             }
         } else m_config_attempts = 0;
 
+        /* Watchdog: if ready but no packet received for 90s, re-handshake */
+        if (m_config_complete && m_conn == TRANSPORT_CONN_READY) {
+            int64_t last_rx = m_last_rx_us.load();
+            if (last_rx && now - last_rx > 90000000LL) {
+                ESP_LOGW(TAG, "no activity for 90s — re-syncing");
+                m_config_complete = false;
+                m_pending_config_id = 0;
+                m_config_attempts = 0;
+                m_last_rx_us = now;
+                m_conn = TRANSPORT_CONN_SYNCING;
+                app_state_set_conn(CONN_SYNCING, "Watchdog...");
+            }
+        }
+
         TxFeedback feedback{};
         while (m_feedback && xQueueReceive(m_feedback, &feedback, 0) == pdTRUE) {
             if (!m_has_pending_text || feedback.id != m_pending_packet_id) continue;
@@ -193,6 +207,7 @@ void MeshSession::handle_config_complete(uint32_t id)
 
 void MeshSession::on_fromradio(const uint8_t* data, size_t len)
 {
+    m_last_rx_us = esp_timer_get_time();
     if (len > UINT16_MAX) return;
     channel_service_on_frame(data, len);
     mesh_event_t ev;

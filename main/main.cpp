@@ -37,6 +37,7 @@
 #include "message_store.h"
 #include "tab5_audio.h"
 #include "app_commands.h"
+#include "mesh_proto.h"
 #include "channel_service.h"
 #include "app_clock.h"
 #include "wifi_service.h"
@@ -209,4 +210,12 @@ extern "C" int app_send_dm(const char* text, uint32_t to_node)
     } else {
         return s_mesh_session.send_dm(text, to_node);
     }
+}
+
+extern "C" int app_send_position(int32_t lat_i, int32_t lon_i)
+{
+    uint8_t buf[256];
+    size_t n = mesh_encode_position(lat_i, lon_i, buf, sizeof(buf));
+    if (!n) return ESP_ERR_INVALID_ARG;
+    return send_admin_frame(buf, n);
 }
