@@ -199,3 +199,14 @@ extern "C" int app_send_text(const char* text)
         return s_mesh_session.send_text(text);
     }
 }
+
+extern "C" int app_send_dm(const char* text, uint32_t to_node)
+{
+    if (!text || !text[0] || !to_node) return ESP_ERR_INVALID_ARG;
+    if (s_active_transport == 0) {
+        ble_transport_send_dm(text, to_node);
+        return ESP_OK;
+    } else {
+        return s_mesh_session.send_dm(text, to_node);
+    }
+}

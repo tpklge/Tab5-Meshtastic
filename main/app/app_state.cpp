@@ -200,10 +200,25 @@ void app_state_add_channel_message(uint32_t from, const char* text, bool is_self
 
     lock();
     msg_rec_t* m = &g.msgs[g.msg_total % APP_MAX_MSGS];
-    m->channel = channel;
-    m->from    = from;
-    m->is_self = is_self;
-    m->recv_us = now_us;
+    m->channel  = channel;
+    m->from     = from;
+    m->to_node  = 0;
+    m->is_self  = is_self;
+    m->recv_us  = now_us;
+    copy_str(m->text, sizeof(m->text), text);
+    g.msg_total++;
+    unlock();
+}
+
+void app_state_add_dm(uint32_t from, uint32_t to_node, const char* text, bool is_self, int64_t now_us)
+{
+    lock();
+    msg_rec_t* m = &g.msgs[g.msg_total % APP_MAX_MSGS];
+    m->channel  = 0xFF;   /* DM sentinel — never a real Meshtastic channel */
+    m->from     = from;
+    m->to_node  = to_node;
+    m->is_self  = is_self;
+    m->recv_us  = now_us;
     copy_str(m->text, sizeof(m->text), text);
     g.msg_total++;
     unlock();

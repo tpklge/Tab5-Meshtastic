@@ -72,6 +72,7 @@ typedef struct {
 
 typedef struct {
     uint32_t from;
+    uint32_t to;      /* 0xFFFFFFFF = broadcast; other = DM recipient */
     uint8_t channel;
     char     text[233];   /* Meshtastic Data payload max  */
 } mesh_text_t;
@@ -100,6 +101,9 @@ size_t mesh_encode_want_config(uint32_t id, uint8_t* buf, size_t cap);
 size_t mesh_encode_text(const char* text, uint8_t* buf, size_t cap);
 size_t mesh_encode_text_channel(const char* text, uint8_t channel, uint8_t* buf, size_t cap);
 size_t mesh_encode_text_channel_id(const char* text, uint8_t channel, uint32_t id, uint8_t* buf, size_t cap);
+
+/* Same but with an explicit destination node (0 = broadcast = 0xFFFFFFFF). */
+size_t mesh_encode_text_to(const char* text, uint32_t to_node, uint8_t channel, uint32_t id, uint8_t* buf, size_t cap);
 
 /* Decode one FromRadio protobuf. Always fills *ev (kind == MESH_EV_DECODE_FAIL
  * on failure). Returns true if decoding succeeded. */

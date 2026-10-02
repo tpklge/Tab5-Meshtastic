@@ -26,6 +26,7 @@
 #include "lvgl_port.h"
 
 #include <esp_log.h>
+#include <esp_system.h>
 #include <esp_timer.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -109,6 +110,12 @@ struct ShellState {
     uint32_t  failed_seen = 0;
     char      send_status_seen[64] = {};
 
+    /* DM state */
+    uint32_t  dm_peer    = 0;         /* node num of active DM; 0 = channel view */
+    lv_obj_t* d_dm_btn   = nullptr;   /* "DM" button in detail header */
+    lv_obj_t* chat_dm_bar = nullptr;  /* DM context bar in chat header */
+    lv_obj_t* chat_dm_lbl = nullptr;  /* "DM: NodeName" label          */
+
     /* radio tab — onboarding / device picker */
     lv_obj_t* v_manager  = nullptr;   /* saved devices + scan button */
     lv_obj_t* v_disco    = nullptr;   /* discovery scan list         */
@@ -185,6 +192,7 @@ void open_detail(uint32_t num);
 void close_detail(void);
 void populate_detail(void);
 void append_messages(void);
+void add_failed_bubble(lv_obj_t* parent, const char* text);
 void refresh_chat_channels(void);
 void radio_refresh(void);
 void rebuild_manager(void);
@@ -232,6 +240,14 @@ void set_tab(int i)
     if (i < 0 || i >= NUM_TABS) return;
     if (S.active == 3 && i != 3) wifi_settings_leave();
     if (S.active == 4 && i != 4) channels_screen_leave();
+    if (S.active == 1 && i != 1 && S.dm_peer) {
+        S.dm_peer = 0;
+        S.msg_seen = 0;
+        S.messages_initialized = false;
+        S.shown_channel = -1;
+        if (S.chat_dm_bar) lv_obj_add_flag(S.chat_dm_bar, LV_OBJ_FLAG_HIDDEN);
+        if (S.chat_channels) lv_obj_clear_flag(S.chat_channels, LV_OBJ_FLAG_HIDDEN);
+    }
     close_detail();   /* leaving to another tab dismisses the node detail */
     if (S.chat_kb) lv_obj_add_flag(S.chat_kb, LV_OBJ_FLAG_HIDDEN);   /* hide OSK */
     S.active = i;
@@ -488,10 +504,11 @@ void refresh_cb(lv_timer_t*)
             strlcpy(S.send_status_seen, s.send_status, sizeof(S.send_status_seen));
             lv_textarea_set_placeholder_text(S.chat_input, s.send_status[0] ? s.send_status : "Message the mesh...");
         }
-        if (s.failed_generation != S.failed_seen && s.failed_channel == settings_store_get()->sel_channel) {
+        if (s.failed_generation != S.failed_seen &&
+            (s.failed_channel == settings_store_get()->sel_channel ||
+             (S.dm_peer && s.failed_channel == 0xFF))) {
             S.failed_seen = s.failed_generation;
-            if (!lv_textarea_get_text(S.chat_input)[0])
-                lv_textarea_set_text(S.chat_input, s.failed_text);
+            if (S.chat_list) add_failed_bubble(S.chat_list, s.failed_text);
         }
     }
 
@@ -679,6 +696,34 @@ lv_obj_t* make_detail_panel(lv_obj_t* parent)
     S.d_name = label(idcol, "--", FONT_TITLE, C_HI);
     S.d_id   = label(idcol, "--", FONT_META, C_DIM);
 
+    /* DM button — user_data is set to the node num in open_detail() */
+    S.d_dm_btn = box(hdr, 160, 40);
+    bg(S.d_dm_btn, C_SURF);
+    radius(S.d_dm_btn, M_RAD_M);
+    lv_obj_add_flag(S.d_dm_btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_center(label(S.d_dm_btn, LV_SYMBOL_KEYBOARD " Mensagem direta", FONT_META, C_HI));
+    lv_obj_add_event_cb(S.d_dm_btn, [](lv_event_t* e) {
+        uint32_t num = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
+        if (!num) return;
+        S.dm_peer = num;
+        S.msg_seen = 0;
+        S.messages_initialized = false;
+        /* Update DM bar label */
+        if (S.chat_dm_lbl) {
+            node_rec_t n;
+            char label_buf[80];
+            if (app_state_get_node(num, &n) && n.has_user && n.short_name[0])
+                snprintf(label_buf, sizeof(label_buf), "DM: %s (%s)", n.short_name, n.long_name);
+            else
+                snprintf(label_buf, sizeof(label_buf), "DM: !%08lx", (unsigned long)num);
+            lv_label_set_text(S.chat_dm_lbl, label_buf);
+        }
+        if (S.chat_dm_bar) lv_obj_clear_flag(S.chat_dm_bar, LV_OBJ_FLAG_HIDDEN);
+        if (S.chat_channels) lv_obj_add_flag(S.chat_channels, LV_OBJ_FLAG_HIDDEN);
+        close_detail();
+        set_tab(1);   /* switch to chat tab */
+    }, LV_EVENT_CLICKED, nullptr);
+
     /* body (scrollable in case of overflow) */
     lv_obj_t* body = box(panel, lv_pct(100), 0);
     lv_obj_set_flex_grow(body, 1);
@@ -788,6 +833,7 @@ void open_detail(uint32_t num)
     S.detail_num  = num;
     S.detail_open = true;
     populate_detail();
+    if (S.d_dm_btn) lv_obj_set_user_data(S.d_dm_btn, (void*)(uintptr_t)num);
     if (S.detail) lv_obj_clear_flag(S.detail, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -807,6 +853,39 @@ void sender_name(uint32_t num, char* out, size_t cap)
         snprintf(out, cap, "%s", n.short_name);
     else
         snprintf(out, cap, "!%04lx", (unsigned long)(num & 0xffff));
+}
+
+void add_failed_bubble(lv_obj_t* parent, const char* text)
+{
+    lv_obj_t* row = box(parent, lv_pct(100), LV_SIZE_CONTENT);
+    flex_row(row);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    lv_obj_t* col = box(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    flex_col(col);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    lv_obj_set_style_pad_row(col, 2, 0);
+
+    label(col, LV_SYMBOL_WARNING " Falha ao enviar — toque para reenviar", FONT_META, C_AMBER);
+
+    lv_obj_t* bub = box(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    bg(bub, 0x3B1010);   /* dark red */
+    radius(bub, M_RAD_M);
+    lv_obj_set_style_pad_hor(bub, 12, 0);
+    lv_obj_set_style_pad_ver(bub, 8, 0);
+    lv_obj_add_flag(bub, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_t* txt = label(bub, text, FONT_BODY, 0xFF6666);
+    if (strlen(text) > 28) {
+        lv_obj_set_width(txt, 680);
+        lv_label_set_long_mode(txt, LV_LABEL_LONG_MODE_WRAP);
+    }
+    /* user_data on the bubble points at the LVGL-owned text copy (stable lifetime) */
+    lv_obj_set_user_data(bub, (void*)lv_label_get_text(txt));
+    lv_obj_add_event_cb(bub, [](lv_event_t* e) {
+        const char* t = static_cast<const char*>(lv_obj_get_user_data(
+            static_cast<lv_obj_t*>(lv_event_get_target(e))));
+        if (S.chat_input && t) lv_textarea_set_text(S.chat_input, t);
+    }, LV_EVENT_CLICKED, nullptr);
 }
 
 void add_bubble(lv_obj_t* parent, const msg_rec_t* m)
@@ -890,9 +969,9 @@ void refresh_chat_channels(void)
 void append_messages(void)
 {
     if (!S.chat_list) return;
-    uint8_t channel = settings_store_get()->sel_channel;
-    if (channel >= 8) channel = 0;
-    bool switched = S.shown_channel != channel;
+    uint8_t channel = S.dm_peer ? 0xFF : settings_store_get()->sel_channel;
+    if (!S.dm_peer && channel >= 8) channel = 0;
+    bool switched = S.shown_channel != (int)channel;
     uint32_t total = app_state_msg_total();
     if (!switched && total == S.msg_seen && S.messages_initialized) return;
     static msg_rec_t buf[APP_MAX_MSGS];
@@ -913,8 +992,9 @@ void append_messages(void)
     if (switched) {
         if (S.shown_channel >= 0 && S.shown_channel < 8)
             strlcpy(S.drafts[S.shown_channel], lv_textarea_get_text(S.chat_input), sizeof(S.drafts[0]));
-        lv_textarea_set_text(S.chat_input, S.drafts[channel]);
-        S.shown_channel = channel;
+        /* DM view uses a blank input; channels use their per-channel draft */
+        lv_textarea_set_text(S.chat_input, (channel < 8) ? S.drafts[channel] : "");
+        S.shown_channel = (int)channel;
     }
     if (switched || !S.messages_initialized || S.msg_seen < first) {
         lv_obj_clean(S.chat_list);
@@ -932,6 +1012,12 @@ void append_messages(void)
     int32_t old_y = lv_obj_get_scroll_y(S.chat_list);
     for (uint32_t i = start; i < n; ++i) {
         if (buf[i].channel != channel) continue;
+        /* DM filter: only show messages to/from the active peer */
+        if (S.dm_peer && buf[i].channel == 0xFF) {
+            bool from_peer = (buf[i].from == S.dm_peer);
+            bool to_peer   = (buf[i].is_self && buf[i].to_node == S.dm_peer);
+            if (!from_peer && !to_peer) continue;
+        }
         add_bubble(S.chat_list, &buf[i]);
         lv_obj_set_user_data(lv_obj_get_child(S.chat_list, -1), (void*)(uintptr_t)(first + i + 1));
     }
@@ -956,7 +1042,11 @@ void do_send(void)
     const char* t = lv_textarea_get_text(S.chat_input);
     if (!t || !t[0]) return;
     app_snapshot_t snap; app_state_snapshot(&snap);
-    if (snap.state != CONN_READY) return; // Keep the draft while disconnected.
+    if (snap.state != CONN_READY) return; /* Keep the draft while disconnected. */
+    if (S.dm_peer) {
+        if (app_send_dm(t, S.dm_peer) == ESP_OK) lv_textarea_set_text(S.chat_input, "");
+        return;
+    }
     channel_snapshot_t channels; channel_service_snapshot(&channels);
     uint8_t selected = settings_store_get()->sel_channel;
     if (selected >= 8 || !channels.known[selected] || channels.channels[selected].role == meshtastic_Channel_Role_DISABLED) return;
@@ -1009,6 +1099,30 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
     lv_obj_add_event_cb(latest, [](lv_event_t*) {
         lv_obj_scroll_to_y(S.chat_list, LV_COORD_MAX, LV_ANIM_OFF);
     }, LV_EVENT_CLICKED, nullptr);
+
+    /* DM context bar — hidden by default, shown when dm_peer != 0 */
+    S.chat_dm_bar = box(hdr, LV_SIZE_CONTENT, 40);
+    bg(S.chat_dm_bar, C_SURF);
+    radius(S.chat_dm_bar, M_RAD_M);
+    flex_row(S.chat_dm_bar);
+    lv_obj_set_style_pad_hor(S.chat_dm_bar, 10, 0);
+    lv_obj_set_style_pad_column(S.chat_dm_bar, 8, 0);
+    S.chat_dm_lbl = label(S.chat_dm_bar, "DM", FONT_META, C_GREEN);
+    lv_obj_t* dm_close = box(S.chat_dm_bar, 28, 28);
+    bg(dm_close, C_SURF2);
+    radius(dm_close, M_RAD_M);
+    lv_obj_add_flag(dm_close, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_center(label(dm_close, LV_SYMBOL_CLOSE, FONT_META, C_HI));
+    lv_obj_add_event_cb(dm_close, [](lv_event_t*) {
+        S.dm_peer = 0;
+        S.msg_seen = 0;
+        S.messages_initialized = false;
+        S.shown_channel = -1;
+        if (S.chat_dm_bar) lv_obj_add_flag(S.chat_dm_bar, LV_OBJ_FLAG_HIDDEN);
+        if (S.chat_channels) lv_obj_clear_flag(S.chat_channels, LV_OBJ_FLAG_HIDDEN);
+        append_messages();
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_flag(S.chat_dm_bar, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t* list = box(panel, lv_pct(100), 0);
     lv_obj_set_flex_grow(list, 1);
@@ -1278,23 +1392,38 @@ lv_obj_t* make_radio_panel(lv_obj_t* parent)
     lv_obj_set_style_pad_column(transport_row, 12, 0);
     hairline_side(transport_row, LV_BORDER_SIDE_BOTTOM);
     label(transport_row, "Transport:", FONT_META, C_DIM);
+    auto transport_switch_cb = [](lv_event_t* e) {
+        uint8_t t = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
+        uint8_t cur = settings_store_get()->transport;
+        if (t == cur) return;   /* already active, nothing to do */
+        settings_store_set_transport(t);
+        /* Confirm restart via modal dialog */
+        lv_obj_t* dlg = lv_msgbox_create(nullptr);
+        lv_msgbox_add_title(dlg, "Reiniciar?");
+        const char* msg = (t == 0)
+            ? "Mudar para BLE requer reinicializar o Tab5.\nO radio BLE sera ativado no proximo boot."
+            : "Mudar para RAK3172H (Grove) requer reinicializar.\nO BLE sera desativado no proximo boot.";
+        lv_msgbox_add_text(dlg, msg);
+        lv_obj_t* cancel = lv_msgbox_add_footer_button(dlg, "Cancelar");
+        lv_obj_add_event_cb(cancel, [](lv_event_t* e2) {
+            /* Revert the setting */
+            settings_store_set_transport(settings_store_get()->transport == 0 ? 1 : 0);
+            lv_msgbox_close(static_cast<lv_obj_t*>(lv_event_get_user_data(e2)));
+        }, LV_EVENT_CLICKED, dlg);
+        lv_obj_t* confirm = lv_msgbox_add_footer_button(dlg, "Reiniciar agora");
+        lv_obj_add_event_cb(confirm, [](lv_event_t*) { esp_restart(); }, LV_EVENT_CLICKED, nullptr);
+    };
     // BLE button
     lv_obj_t* ble_btn = lv_btn_create(transport_row);
     lv_obj_set_size(ble_btn, 130, 36);
-    lv_obj_add_event_cb(ble_btn, [](lv_event_t*){
-        settings_store_set_transport(0);
-        // TODO: switch active transport via AppController
-    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(ble_btn, transport_switch_cb, LV_EVENT_CLICKED, (void*)(uintptr_t)0);
     lv_obj_t* ble_lbl = lv_label_create(ble_btn);
     lv_label_set_text(ble_lbl, LV_SYMBOL_BLUETOOTH " BLE");
     lv_obj_center(ble_lbl);
     // UART button
     lv_obj_t* uart_btn = lv_btn_create(transport_row);
     lv_obj_set_size(uart_btn, 180, 36);
-    lv_obj_add_event_cb(uart_btn, [](lv_event_t*){
-        settings_store_set_transport(1);
-        // TODO: switch active transport via AppController
-    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(uart_btn, transport_switch_cb, LV_EVENT_CLICKED, (void*)(uintptr_t)1);
     lv_obj_t* uart_lbl = lv_label_create(uart_btn);
     lv_label_set_text(uart_lbl, LV_SYMBOL_USB " RAK3172H (Grove)");
     lv_obj_center(uart_lbl);

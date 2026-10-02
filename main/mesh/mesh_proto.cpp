@@ -66,13 +66,18 @@ size_t mesh_encode_text_channel(const char* text, uint8_t channel, uint8_t* buf,
 }
 size_t mesh_encode_text_channel_id(const char* text, uint8_t channel, uint32_t id, uint8_t* buf, size_t cap)
 {
+    return mesh_encode_text_to(text, 0, channel, id, buf, cap);
+}
+
+size_t mesh_encode_text_to(const char* text, uint32_t to_node, uint8_t channel, uint32_t id, uint8_t* buf, size_t cap)
+{
     if (!text || channel >= 8) return 0;
     meshtastic_ToRadio t    = meshtastic_ToRadio_init_zero;
     t.which_payload_variant = meshtastic_ToRadio_packet_tag;
     meshtastic_MeshPacket* p = &t.packet;
     p->channel                = channel;
     p->id                     = id;
-    p->to                     = 0xffffffff;   /* broadcast */
+    p->to                     = to_node ? to_node : 0xffffffff;
     p->which_payload_variant  = meshtastic_MeshPacket_decoded_tag;
     p->decoded.portnum        = meshtastic_PortNum_TEXT_MESSAGE_APP;
     size_t n = strlen(text);
@@ -159,8 +164,9 @@ bool mesh_decode_fromradio(const uint8_t* data, uint16_t len, mesh_event_t* ev)
                 ev->u.tx_status.error = routing.error_reason;
             }
         } else if (d->portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
-            ev->kind         = MESH_EV_TEXT;
-            ev->u.text.from  = mp->from;
+            ev->kind           = MESH_EV_TEXT;
+            ev->u.text.from    = mp->from;
+            ev->u.text.to      = mp->to;
             ev->u.text.channel = mp->channel;
             size_t n = d->payload.size;
             if (n > sizeof(ev->u.text.text) - 1) n = sizeof(ev->u.text.text) - 1;

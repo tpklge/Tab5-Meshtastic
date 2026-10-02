@@ -33,10 +33,14 @@ public:
     // Send a broadcast text message.
     esp_err_t send_text(const char* text);
 
+    // Send a direct message to a specific node.
+    esp_err_t send_dm(const char* text, uint32_t to_node);
+
 private:
     struct OutgoingText {
         char text[201];
         uint32_t from;
+        uint32_t to_node;   /* 0 = broadcast */
         uint8_t channel;
     };
     struct TxFeedback { uint32_t id; int error; bool routing_error; };

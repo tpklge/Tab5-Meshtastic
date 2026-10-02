@@ -8,6 +8,9 @@ extern "C" {
 /* Returns ESP_OK only when the request was accepted into the outgoing queue. */
 int app_send_text(const char* text);
 
+/* Send a direct message to a specific node (to_node != 0). */
+int app_send_dm(const char* text, uint32_t to_node);
+
 /* Stop peripheral use and power the Tab5 off from a dedicated task. */
 void app_power_off(void);
 

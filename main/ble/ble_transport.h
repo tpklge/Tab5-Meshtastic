@@ -31,6 +31,7 @@ esp_err_t ble_transport_send_raw(const uint8_t* data, size_t len);
  * Safe to call from the LVGL task (NimBLE GATT writes are thread-safe). No-op if
  * not connected. */
 void ble_transport_send_text(const char* text);
+void ble_transport_send_dm(const char* text, uint32_t to_node);
 
 /* ---- onboarding / device-picker commands (PRD §6.1) ---- */
 

@@ -186,6 +186,7 @@ void scan(void*) {
     if (fd >= 0) close(fd);
     if (decoder) quirc_destroy(decoder);
     delete code; delete decoded;
+    initialized = false;   /* force full re-init on next capture to avoid stale ISP state */
     running = false;
     vTaskDelete(nullptr);
 }

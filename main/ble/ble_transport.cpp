@@ -230,6 +230,22 @@ void ble_transport_send_text(const char* text)
     ESP_LOGI(TAG, "sent text (%u bytes) rc=%d", (unsigned)n, rc);
 }
 
+void ble_transport_send_dm(const char* text, uint32_t to_node)
+{
+    if (!text || !text[0] || !to_node) return;
+    if (s_conn.toradio_handle == 0) {
+        ESP_LOGW(TAG, "send_dm ignored — not connected");
+        return;
+    }
+    app_state_add_dm(s_my_num, to_node, text, true, esp_timer_get_time());   /* local echo */
+
+    uint8_t buf[256];
+    size_t n = mesh_encode_text_to(text, to_node, settings_store_get()->sel_channel, 0, buf, sizeof(buf));
+    if (n == 0) { ESP_LOGE(TAG, "dm encode failed"); return; }
+    int rc = ble_gattc_write_flat(s_conn.conn_handle, s_conn.toradio_handle, buf, n, NULL, NULL);
+    ESP_LOGI(TAG, "sent DM to 0x%08lx (%u bytes) rc=%d", (unsigned long)to_node, (unsigned)n, rc);
+}
+
 /* ====================== FromNum subscribe ===================== */
 
 static int subscribe_cb(uint16_t, const struct ble_gatt_error* error,
@@ -377,10 +393,16 @@ static void handle_event(const mesh_event_t* ev, uint16_t len)
         }
         break;
     case MESH_EV_TEXT:
-        ESP_LOGW(TAG, "TEXT from 0x%08lx: \"%s\"",
-                 (unsigned long)ev->u.text.from, ev->u.text.text);
-        app_state_add_channel_message(ev->u.text.from, ev->u.text.text,
-                              ev->u.text.from == s_my_num, esp_timer_get_time(), ev->u.text.channel, true);
+        ESP_LOGW(TAG, "TEXT from 0x%08lx to 0x%08lx: \"%s\"",
+                 (unsigned long)ev->u.text.from, (unsigned long)ev->u.text.to, ev->u.text.text);
+        if (ev->u.text.to != 0xffffffff && ev->u.text.to != 0) {
+            /* Addressed to a specific node — treat as DM */
+            app_state_add_dm(ev->u.text.from, ev->u.text.to, ev->u.text.text,
+                             ev->u.text.from == s_my_num, esp_timer_get_time());
+        } else {
+            app_state_add_channel_message(ev->u.text.from, ev->u.text.text,
+                                  ev->u.text.from == s_my_num, esp_timer_get_time(), ev->u.text.channel, true);
+        }
         break;
     case MESH_EV_POSITION:
         app_state_set_node_position(ev->u.position.from, &ev->u.position.pos,

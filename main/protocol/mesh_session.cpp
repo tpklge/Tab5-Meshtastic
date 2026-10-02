@@ -93,8 +93,12 @@ void MeshSession::run_task()
         }
 
         if (m_has_pending_text && m_pending_ack_us && now - m_pending_ack_us >= kAckGraceUs) {
-            app_state_add_channel_message(m_pending_text.from, m_pending_text.text, true, now,
-                                          m_pending_text.channel, true);
+            if (m_pending_text.to_node) {
+                /* DM echo already added in send_dm(); just update status */
+            } else {
+                app_state_add_channel_message(m_pending_text.from, m_pending_text.text, true, now,
+                                              m_pending_text.channel, true);
+            }
             app_state_set_send_status("Enviado ao radio");
             ESP_LOGI(TAG, "text id=%lu accepted by RAK", (unsigned long)m_pending_packet_id);
             m_has_pending_text = false;
@@ -129,8 +133,11 @@ void MeshSession::run_task()
             while (!id) id = esp_random();
             m_retry_same_id = false;
             uint8_t buf[256];
-            size_t len = mesh_encode_text_channel_id(m_pending_text.text, m_pending_text.channel,
-                                                     id, buf, sizeof(buf));
+            size_t len = m_pending_text.to_node
+                ? mesh_encode_text_to(m_pending_text.text, m_pending_text.to_node,
+                                      m_pending_text.channel, id, buf, sizeof(buf))
+                : mesh_encode_text_channel_id(m_pending_text.text, m_pending_text.channel,
+                                              id, buf, sizeof(buf));
             esp_err_t err = len ? m_transport->send_toproto(buf, len) : ESP_ERR_INVALID_SIZE;
             ++m_pending_attempts;
             m_last_text_tx_us = now;
@@ -231,7 +238,11 @@ void MeshSession::on_fromradio(const uint8_t* data, size_t len)
         break;
 
     case MESH_EV_TEXT:
-        app_state_add_channel_message(ev.u.text.from, ev.u.text.text, /*is_self=*/false, now_us, ev.u.text.channel, true);
+        if (ev.u.text.to != 0xffffffff && ev.u.text.to != 0) {
+            app_state_add_dm(ev.u.text.from, ev.u.text.to, ev.u.text.text, false, now_us);
+        } else {
+            app_state_add_channel_message(ev.u.text.from, ev.u.text.text, false, now_us, ev.u.text.channel, true);
+        }
         break;
 
     case MESH_EV_QUEUE_STATUS:
@@ -298,12 +309,34 @@ esp_err_t MeshSession::send_text(const char* text)
     app_state_snapshot(&snap);
     OutgoingText item{};
     strlcpy(item.text, text, sizeof(item.text));
-    item.channel = settings_store_get()->sel_channel;
-    item.from = snap.my_num;
+    item.channel  = settings_store_get()->sel_channel;
+    item.from     = snap.my_num;
+    item.to_node  = 0;
     if (xQueueSend(m_outbox, &item, 0) != pdTRUE) {
         app_state_set_send_status("Fila cheia; aguarde e tente novamente");
         return ESP_ERR_TIMEOUT;
     }
     app_state_set_send_status("Na fila; aguardando radio");
+    return ESP_OK;
+}
+
+esp_err_t MeshSession::send_dm(const char* text, uint32_t to_node)
+{
+    if (!to_node || !m_transport || !m_config_complete || !m_outbox || !text || !text[0])
+        return ESP_ERR_INVALID_STATE;
+    app_snapshot_t snap;
+    app_state_snapshot(&snap);
+    OutgoingText item{};
+    strlcpy(item.text, text, sizeof(item.text));
+    item.channel  = settings_store_get()->sel_channel;
+    item.from     = snap.my_num;
+    item.to_node  = to_node;
+    if (xQueueSend(m_outbox, &item, 0) != pdTRUE) {
+        app_state_set_send_status("Fila cheia; aguarde e tente novamente");
+        return ESP_ERR_TIMEOUT;
+    }
+    /* Local DM echo so it appears in the DM thread immediately */
+    app_state_add_dm(snap.my_num, to_node, text, true, esp_timer_get_time());
+    app_state_set_send_status("DM na fila; aguardando radio");
     return ESP_OK;
 }
