@@ -14,6 +14,7 @@
  * Brightness: BSP initialises LEDC_CHANNEL_1 (LEDC_TIMER_0, 12-bit, low-speed).
  */
 #include "lcd_tools.h"
+#include "display_idle.h"
 
 #include "lvgl_port.h"
 #include "lvgl_port_disp.h"
@@ -50,6 +51,11 @@ static void touch_read_cb(lv_indev_t* /*indev*/, lv_indev_data_t* data)
 
     esp_lcd_touch_read_data(s_tp);
     bool touched = esp_lcd_touch_get_coordinates(s_tp, tx, ty, ts, &cnt, 1);
+
+    if (!display_idle_touch(touched && cnt > 0)) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
 
     if (touched && cnt > 0) {
         data->point.x = (int32_t)(PHY_V - 1) - (int32_t)ty[0];
@@ -144,7 +150,7 @@ esp_err_t app_lcd_lvgl_init(m5::tab5::m5tab5_component& board)
 
 void lcd_set_brightness(uint8_t percent)
 {
-    if (percent < 5)   percent = 5;
+    if (percent != 0 && percent < 5) percent = 5;
     if (percent > 100) percent = 100;
     uint32_t duty = (BACKLIGHT_LEDC_MAX_DUTY * percent) / 100;
     ledc_set_duty(BACKLIGHT_LEDC_MODE, BACKLIGHT_LEDC_CHANNEL, duty);

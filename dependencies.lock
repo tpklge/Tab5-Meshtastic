@@ -115,7 +115,7 @@ dependencies:
   m5_tab5_component:
     dependencies: []
     source:
-      path: /Users/paludo/Documentos/PlatformIO/Projects/Tab5Meshtastic/components/m5_tab5_component
+      path: /Users/paludo/Documents/PlatformIO/Projects/Tab5Meshtastic/components/m5_tab5_component
       type: local
     version: 0.1.0
 direct_dependencies:

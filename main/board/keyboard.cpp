@@ -9,6 +9,7 @@
  */
 
 #include "keyboard.h"
+#include "display_idle.h"
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -39,6 +40,7 @@ static void kbd_timer(lv_timer_t* /*timer*/)
     // Bound work per UI tick; preserve FIFO order without waiting for input.
     for (unsigned i = 0; i < 4; ++i) {
         if (xQueueReceive(s_queue, &ev, 0) != pdTRUE) break;
+        if (display_idle_activity()) continue;
         ui_kbd_feed(ev.str_data, ev.str_len, ev.str_modifier);
     }
 }

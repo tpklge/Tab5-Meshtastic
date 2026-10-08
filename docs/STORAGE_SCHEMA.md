@@ -30,6 +30,11 @@ Namespace: `tab5mesh`
 NimBLE bond store uses its own internal NVS namespace — never touch it.
 
 ### New keys added by this fork
+Application preferences are stored in namespace `t5app`. The screen timeout
+uses key `screen_timeout` (`uint32`, seconds): 0 disables blanking, 30–600 sets
+the inactivity delay, and a missing key preserves the 120-second default. It
+does not require an NVS erase or change existing preferences.
+
 | Key | Type | Description |
 |-----|------|-------------|
 | `transport` | uint8 | Selected transport: 0=BLE, 1=UART |

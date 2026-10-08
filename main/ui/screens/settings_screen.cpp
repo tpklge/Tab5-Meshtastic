@@ -1,6 +1,7 @@
 #include "settings_screen.h"
 #include "settings_store.h"
 #include "lcd_tools.h"
+#include "display_idle.h"
 #include "tab5_audio.h"
 #include "app_clock.h"
 #include "wifi_settings.h"
@@ -10,6 +11,8 @@
 
 static lv_obj_t* s_brightness_slider = nullptr;
 static lv_obj_t* s_brightness_label  = nullptr;
+static lv_obj_t* s_timeout_dd        = nullptr;
+static const uint32_t s_timeout_seconds[] = {0, 30, 60, 120, 300, 600};
 static lv_obj_t* s_notif_sw          = nullptr;
 static lv_obj_t* s_vol_slider        = nullptr;
 static lv_obj_t* s_vol_label         = nullptr;
@@ -229,6 +232,25 @@ lv_obj_t* settings_screen_make(lv_obj_t* parent)
     lv_label_set_text(rst_lbl, "Reset to default");
     lv_obj_center(rst_lbl);
 
+    lv_obj_t* timeout_label = lv_label_create(row1);
+    lv_label_set_text(timeout_label, "Apagar tela por inatividade");
+    lv_obj_set_style_text_color(timeout_label, lv_color_hex(C_HI), 0);
+    lv_obj_set_style_text_font(timeout_label, &lv_font_montserrat_16, 0);
+    s_timeout_dd = lv_dropdown_create(row1);
+    lv_obj_set_size(s_timeout_dd, lv_pct(100), M_TOUCH);
+    lv_dropdown_set_options(s_timeout_dd, "Nunca\n30 segundos\n1 minuto\n2 minutos\n5 minutos\n10 minutos");
+    lv_obj_add_event_cb(s_timeout_dd, [](lv_event_t* e) {
+        uint16_t selected = lv_dropdown_get_selected((lv_obj_t*)lv_event_get_target(e));
+        uint32_t seconds = s_timeout_seconds[selected];
+        settings_store_set_screen_timeout(seconds);
+        display_idle_set_timeout(seconds);
+    }, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_t* timeout_hint = lv_label_create(row1);
+    lv_label_set_text(timeout_hint, "Toque na tela ou pressione uma tecla para voltar.");
+    lv_obj_set_width(timeout_hint, lv_pct(100));
+    lv_obj_set_style_text_color(timeout_hint, lv_color_hex(C_MID), 0);
+    lv_obj_set_style_text_font(timeout_hint, &lv_font_montserrat_14, 0);
+
     // --- Audio section ---
     lv_obj_t* sec2 = lv_label_create(panel);
     lv_label_set_text(sec2, "NOTIFICATIONS");
@@ -358,6 +380,13 @@ void settings_screen_refresh(lv_obj_t* panel)
     }
     const app_settings_t* s = settings_store_get();
 
+    if (s_timeout_dd) {
+        uint16_t selected = 0;
+        for (uint16_t i = 1; i < sizeof(s_timeout_seconds) / sizeof(s_timeout_seconds[0]); ++i) {
+            if (s->screen_timeout_s >= s_timeout_seconds[i]) selected = i;
+        }
+        lv_dropdown_set_selected(s_timeout_dd, selected);
+    }
     if (s_brightness_slider) {
         lv_slider_set_value(s_brightness_slider, s->brightness, LV_ANIM_OFF);
         char buf[8]; snprintf(buf, sizeof(buf), "%d%%", s->brightness);

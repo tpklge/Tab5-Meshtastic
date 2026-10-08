@@ -52,8 +52,11 @@ describe the additions implemented in this fork.
 - **Tab5 battery status** — measured voltage and an approximate percentage in the
   top bar. The `~` percentage is estimated from voltage, not a charge counter;
   unavailable readings show `--`. Node battery telemetry is separate.
-- **Display and sound** — saved brightness and audio notification settings,
-  including volume and notification pattern.
+- **Display and sound** — saved brightness, screen inactivity timeout and audio
+  notification settings, including volume and notification pattern. In **SET**,
+  choose never, 30 seconds, or 1/2/5/10 minutes (default: 2 minutes). Touch or a
+  physical key restores the saved brightness; the first gesture only wakes the
+  screen. Radio communication and notifications continue while it is blanked.
 - **Diagnostics** — connection status, radio identity and a long-press diagnostics
   strip; BLE uses polling and read-timeout recovery.
 - **Launcher deployment** — build an application binary for installation through
@@ -136,7 +139,7 @@ idf.py -p /dev/ttyACM<Tab5> erase-flash && idf.py -p /dev/ttyACM<Tab5> flash
    screen offers QR sharing, camera scanning and URL import.
 3. **Chat:** select the conversation in the **CHAT** header. That selection also
    determines the outgoing channel; there is no need to return to CANAIS to send.
-4. **Configure the Tab5:** open **SET** for brightness, notifications, Wi-Fi,
+4. **Configure the Tab5:** open **SET** for brightness, screen timeout, notifications, Wi-Fi,
    date/time and UTC offset. Connecting Wi-Fi triggers internet time sync;
    manual time setting remains available offline.
 5. **Inspect diagnostics:** long-press the top status bar to toggle the bottom

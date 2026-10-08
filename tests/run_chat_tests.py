@@ -23,6 +23,10 @@ with tempfile.TemporaryDirectory(prefix='tab5-chat-tests-') as temp:
     run(['c++', *flags, str(root/'tests/chat_clock_test.cpp'), str(root/'main/app/app_state.cpp'),
          str(root/'main/app/clock_calendar.cpp'), str(root/'main/board/battery_level.cpp'), '-o', str(clock)])
     run([str(clock)])
+    settings = out/'settings-test'
+    run(['c++', '-I'+str(root/'tests/settings_stubs'), *flags,
+         str(root/'tests/settings_store_test.cpp'), '-o', str(settings)])
+    run([str(settings)])
     config = out/'lv_conf.h'
     config.write_text('''#pragma once
 #define LV_CONF_H
@@ -54,5 +58,6 @@ with tempfile.TemporaryDirectory(prefix='tab5-chat-tests-') as temp:
     gc = '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections'
     run(['c++', *flags, '-ffunction-sections', '-fdata-sections', gc, f'-DLV_CONF_PATH="{config}"',
          str(root/'tests/chat_ui_test.cpp'), str(root/'main/app/app_state.cpp'),
+         str(root/'main/board/display_idle.cpp'),
          str(out/'build/lib/liblvgl.a'), '-o', str(ui)])
     run([str(ui)])

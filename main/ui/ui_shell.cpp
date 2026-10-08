@@ -17,6 +17,7 @@
 #include "screens/wifi_settings.h"
 #include "screens/channels_screen.h"
 #include "settings_store.h"
+#include "display_idle.h"
 #include "tab5_audio.h"
 #include "channel_service.h"
 #include "app_clock.h"
@@ -1764,6 +1765,7 @@ void ui_start(void)
         return;
     }
     build_shell();
+    display_idle_init(settings_store_get()->screen_timeout_s);
     lvgl_port_unlock();
 }
 

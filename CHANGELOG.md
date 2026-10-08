@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026-10-08] — Configurable screen inactivity timeout
+
+- Added **SET > DISPLAY > Apagar tela por inatividade** with Never, 30 seconds,
+  and 1/2/5/10 minutes; default is 2 minutes. The selection persists in NVS.
+- Touch or a physical key restores saved brightness. The wake gesture is
+  consumed so it does not activate a control or type into an input.
+- Radio communication and notifications continue while the backlight is off.
+- Updated `newversion/tab5_meshtastic_v2.bin` for OTA: 1,604,192 bytes, within
+  the Launcher's 1,638,400-byte app partition.
+- Validation: headless LVGL, settings persistence and keyboard dispatch tests
+  passed with ASan/UBSan; the user confirmed correct behavior on the Tab5 via OTA.
+- Corrected the local board-component path in the dependency lock file.
+
 ## [Unreleased] — feature/rak3172-uart-persistence
 
 ### Added

@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "main.cpp"
         "board/lcd_tools.cpp"
+        "board/display_idle.cpp"
         "board/keyboard.cpp"
         "board/tab5_audio.cpp"
         "board/battery_monitor.cpp"

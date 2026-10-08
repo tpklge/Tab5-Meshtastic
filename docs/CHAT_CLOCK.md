@@ -19,6 +19,18 @@ Cobre ordem dos eventos de identidade, snapshots concorrentes do historico, indi
 
 Referencias: [LVGL 9.5 flags](https://lvgl.io/docs/open/9.5/common-widget-features/flags), [RTC RX8130 no exemplo oficial Tab5](https://github.com/m5stack/M5Tab5-UserDemo/tree/b4e356bc491ca070d54004718dad789c07d5fc93/platforms/tab5/main/hal/utils/rx8130). O driver local preserva VLF (bit 1) durante a inicializacao, rejeita datas invalidas e limpa VLF apenas apos gravar a data/hora completa.
 
+## Tela por inatividade
+
+Em **SET > DISPLAY > Apagar tela por inatividade**, escolha Nunca, 30 segundos
+ou 1/2/5/10 minutos (padrao: 2 minutos). A escolha fica salva na NVS e vale
+imediatamente. Um toque ou uma tecla fisica restaura o brilho configurado; o
+primeiro gesto apenas acorda a tela. O radio e as notificacoes continuam ativos.
+
+Os testes automatizados cobrem persistencia, configuracoes antigas, prazo de
+inatividade, toque mantido, consumo do gesto de despertar, restauracao do brilho,
+mudanca imediata do tempo, opcao Nunca e volta do contador de tempo de 32 bits.
+Em 2026-10-08, o usuario confirmou o funcionamento no Tab5 apos instalar via OTA.
+
 ## Wi-Fi e hora da internet
 
 Em **SET > WI-FI**, use **Buscar redes**, selecione uma rede e abra **Configurar rede**. Informe a senha e toque em **Conectar e salvar**. Redes ocultas podem ser digitadas pelo SSID; a senha fica oculta e ha suporte ao teclado fisico e ao teclado na tela. O menu mostra o IP quando conectado.

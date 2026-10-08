@@ -2,12 +2,13 @@
 
 Inventário dos arquivos versionados na branch `main`. Arquivos gerados em `build/`, dependências baixadas e configurações locais em `.claude/` não fazem parte do repositório.
 
-Total: **431 arquivos**.
+Total: **437 arquivos**.
 
 - `.gitignore`
 - `CHANGELOG.md`
 - `CLAUDE.md`
 - `CMakeLists.txt`
+- `LICENSE`
 - `PRD.md`
 - `README.md`
 - `README.pt-BR.md`
@@ -350,6 +351,8 @@ Total: **431 arquivos**.
 - `main/board/battery_monitor.h`
 - `main/board/channel_camera.cpp`
 - `main/board/channel_camera.h`
+- `main/board/display_idle.cpp`
+- `main/board/display_idle.h`
 - `main/board/keyboard.cpp`
 - `main/board/keyboard.h`
 - `main/board/lcd_tools.cpp`
@@ -415,6 +418,8 @@ Total: **431 arquivos**.
 - `tests/run_chat_tests.py`
 - `tests/run_mesh_proto_tests.py`
 - `tests/run_rak_persistence_tests.py`
+- `tests/settings_store_test.cpp`
+- `tests/settings_stubs/nvs.h`
 - `tests/stubs/esp_err.h`
 - `tests/stubs/esp_random.h`
 - `tests/stubs/freertos/FreeRTOS.h`
@@ -422,6 +427,7 @@ Total: **431 arquivos**.
 - `tests/stubs/freertos/semphr.h`
 - `tests/stubs/freertos/task.h`
 - `tests/ui_stubs/esp_log.h`
+- `tests/ui_stubs/esp_system.h`
 - `tests/ui_stubs/esp_timer.h`
 - `tests/ui_stubs/lcd_tools.h`
 - `tests/ui_stubs/lvgl_port.h`

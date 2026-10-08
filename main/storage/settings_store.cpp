@@ -13,6 +13,7 @@ static app_settings_t s_settings = {
     .notif_vol   = 70,
     .notif_pat   = 1,
     .sel_channel = 0,
+    .screen_timeout_s = 120,
 };
 
 static nvs_handle_t s_nvs = 0;
@@ -28,6 +29,11 @@ static void load_from_nvs(void)
     LOAD8("notif_pat",  notif_pat);
     LOAD8("sel_ch",     sel_channel);
 #undef LOAD8
+    uint32_t timeout;
+    if (nvs_get_u32(s_nvs, "screen_timeout", &timeout) == ESP_OK &&
+        (timeout == 0 || (timeout >= 30 && timeout <= 600))) {
+        s_settings.screen_timeout_s = timeout;
+    }
 }
 
 static esp_err_t flush(void)
@@ -39,6 +45,8 @@ static esp_err_t flush(void)
     nvs_set_u8(s_nvs, "notif_vol",  s_settings.notif_vol);
     nvs_set_u8(s_nvs, "notif_pat",  s_settings.notif_pat);
     nvs_set_u8(s_nvs, "sel_ch",     s_settings.sel_channel);
+    esp_err_t err = nvs_set_u32(s_nvs, "screen_timeout", s_settings.screen_timeout_s);
+    if (err != ESP_OK) return err;
     return nvs_commit(s_nvs);
 }
 
@@ -69,6 +77,13 @@ esp_err_t settings_store_save(const app_settings_t* s)
 esp_err_t settings_store_set_transport(uint8_t t)  { s_settings.transport = t;  return flush(); }
 esp_err_t settings_store_set_brightness(uint8_t b) { s_settings.brightness = b; return flush(); }
 esp_err_t settings_store_set_channel(uint8_t idx)  { s_settings.sel_channel = idx; return flush(); }
+
+esp_err_t settings_store_set_screen_timeout(uint32_t seconds)
+{
+    if (seconds != 0 && (seconds < 30 || seconds > 600)) return ESP_ERR_INVALID_ARG;
+    s_settings.screen_timeout_s = seconds;
+    return flush();
+}
 
 esp_err_t settings_store_set_notif(uint8_t en, uint8_t vol, uint8_t pat)
 {

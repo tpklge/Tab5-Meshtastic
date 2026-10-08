@@ -6,6 +6,12 @@
 #include <cassert>
 
 static app_settings_t preferences{};
+static uint8_t backlight = 80;
+void lcd_set_brightness(uint8_t percent) { backlight = percent; }
+extern "C" esp_err_t settings_store_set_screen_timeout(uint32_t seconds) {
+    preferences.screen_timeout_s = seconds;
+    return ESP_OK;
+}
 static channel_snapshot_t channel_state{};
 static int beep_count;
 extern "C" esp_err_t settings_store_set_brightness(uint8_t) { return ESP_OK; }
@@ -32,10 +38,16 @@ extern "C" esp_err_t settings_store_set_channel(uint8_t channel) { preferences.s
 void channel_service_snapshot(channel_snapshot_t* out) { *out = channel_state; }
 extern "C" void tab5_audio_beep(audio_pattern_t) { ++beep_count; }
 extern "C" int app_send_text(const char*) { return ESP_OK; }
+extern "C" int app_send_dm(const char*, uint32_t) { return ESP_OK; }
+extern "C" esp_err_t position_service_fetch_and_send() { return ESP_OK; }
+extern "C" uint32_t message_store_load_page(uint8_t, uint32_t, msg_loaded_t*, uint32_t) { return 0; }
 extern "C" esp_err_t message_store_append(uint32_t, uint32_t, uint32_t, uint8_t, bool, bool, int64_t, int64_t, int16_t, int16_t, const char*) { return ESP_OK; }
 
 int main() {
     lv_init();
+    preferences.brightness = 80;
+    preferences.screen_timeout_s = 120;
+    display_idle_init(preferences.screen_timeout_s);
     lv_display_t* display = lv_display_create(1280, 720);
     app_state_init(); app_state_set_conn(CONN_READY, "READY");
     for (int i = 0; i < 2; ++i) {
@@ -79,6 +91,38 @@ int main() {
     wifi_model.count = 1; wifi_model.generation = 1;
     strcpy(wifi_model.networks[0].ssid, "Minha rede");
     settings_screen_make(lv_screen_active());
+    assert(lv_dropdown_get_selected(s_timeout_dd) == 3);
+    lv_dropdown_set_selected(s_timeout_dd, 1);
+    lv_obj_send_event(s_timeout_dd, LV_EVENT_VALUE_CHANGED, nullptr);
+    assert(preferences.screen_timeout_s == 30);
+    lv_tick_inc(29750); lv_timer_handler(); assert(backlight == 80);
+    // User input restarts the deadline, including a finger held on the screen.
+    assert(display_idle_touch(true));
+    lv_tick_inc(29750); lv_timer_handler(); assert(backlight == 80);
+    assert(display_idle_touch(true));
+    assert(display_idle_touch(false));
+    lv_tick_inc(30000); lv_timer_handler(); assert(backlight == 0);
+    // Consume all samples of the wake gesture, then allow the next gesture.
+    preferences.brightness = 45;
+    assert(!display_idle_touch(true)); assert(backlight == 45);
+    assert(!display_idle_touch(true));
+    assert(!display_idle_touch(false));
+    assert(display_idle_touch(true)); assert(display_idle_touch(false));
+    lv_tick_inc(30000); lv_timer_handler(); assert(backlight == 0);
+    assert(display_idle_activity()); assert(backlight == 45);
+    assert(!display_idle_activity());
+    // Changing the setting wakes the screen and applies without a restart.
+    lv_tick_inc(30000); lv_timer_handler(); assert(backlight == 0);
+    lv_dropdown_set_selected(s_timeout_dd, 0);
+    lv_obj_send_event(s_timeout_dd, LV_EVENT_VALUE_CHANGED, nullptr);
+    assert(preferences.screen_timeout_s == 0 && backlight == 45);
+    lv_tick_inc(600000); lv_timer_handler(); assert(backlight == 45);
+    // The 32-bit LVGL clock wrapping must not break inactivity detection.
+    lv_tick_inc(UINT32_MAX - lv_tick_get() - 10000);
+    display_idle_set_timeout(30);
+    lv_tick_inc(29750); lv_timer_handler(); assert(backlight == 45);
+    lv_tick_inc(250); lv_timer_handler(); assert(backlight == 0);
+    display_idle_set_timeout(0);
     assert(lv_dropdown_get_option_count(s_clock_fields[2]) == 100);
     assert(lv_dropdown_get_option_count(s_clock_fields[5]) == 105);
     configure(nullptr); lv_obj_update_layout(modal);
@@ -92,5 +136,5 @@ int main() {
     assert(!strcmp(requested_ssid, "Minha rede") && !strcmp(requested_password, "secret123"));
     configure(nullptr); wifi_settings_leave(); assert(!modal && !focused);
     lv_display_delete(display);
-    puts("PASS: headless LVGL chat: scroll range, viewport preservation, channel filtering, drafts, bounded history, burst notifications and full settings/clock/Wi-Fi construction.");
+    puts("PASS: headless LVGL chat/settings, inactivity deadline, held touches, wake gesture consumption, brightness restoration, live timeout changes, disabled timeout and tick wraparound.");
 }

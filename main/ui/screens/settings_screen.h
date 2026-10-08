@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-// Build the settings panel (brightness + audio notifications).
+// Build the settings panel (display, inactivity timeout, audio, Wi-Fi and clock).
 // Returns the root container; attach to parent or swap as needed.
 lv_obj_t* settings_screen_make(lv_obj_t* parent);
 

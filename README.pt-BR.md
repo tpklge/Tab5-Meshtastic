@@ -20,12 +20,18 @@ Mantido como repositório privado — o upstream não possui licença de distrib
 | **Relógio** | Sincronização SNTP pós-IP; fallback para RTC manual; carimbos no chat |
 | **Bateria** | Leitura INA226 via I2C, tensão exibida na faixa de diagnóstico |
 | **Brilho** | Controle via LEDC (5–100%), persiste entre boots |
+| **Tela por inatividade** | Em SET, escolha Nunca, 30 segundos ou 1/2/5/10 minutos (padrão: 2 minutos); opção salva entre reinicializações |
 | **Áudio** | Codec ES8388, padrões de bipe configuráveis, volume persistido |
 | **Câmera** | Captura CSI para importação de QR de canal |
 | **Launcher** | Compatível com M5Launcher 2.8 (suspend limpo, partição OTA ≤ 2 MB) |
 | **Diagnóstico** | Faixa de status; pressão longa abre overlay completo |
 
 ---
+
+Em **SET > DISPLAY > Apagar tela por inatividade**, configure o tempo sem uso.
+Um toque ou uma tecla física restaura o brilho salvo; o primeiro gesto serve
+apenas para acordar a tela. O rádio e as notificações continuam funcionando com
+a iluminação apagada.
 
 ## Hardware necessário
 
