@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(idf.py *)",
+      "Bash(source ~/esp/esp-idf/export.sh *)",
+      "Bash(bash -c \"source ~/esp/esp-idf/export.sh*)",
+      "Bash(/opt/homebrew/bin/python3.11 -m platformio *)",
+      "Bash(git add * && git commit *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
