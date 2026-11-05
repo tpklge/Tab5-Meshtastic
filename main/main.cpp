@@ -34,6 +34,7 @@
 #include "mesh_session.h"
 #include "app_storage.h"
 #include "settings_store.h"
+#include "sd_storage.h"
 #include "message_store.h"
 #include "tab5_audio.h"
 #include "app_commands.h"
@@ -81,13 +82,36 @@ extern "C" void app_main(void)
 
     settings_init();   /* load saved BLE device(s) before transport starts */
 
-    /* Persistent storage via NVS. app_storage (SPIFFS) kept for future use but
-     * settings_store and message_store now use NVS directly. */
+    /* Persistent storage.
+     *   - app_storage (SPIFFS): file exports (chat_export.txt, etc).
+     *   - settings_store (NVS): small key/value — transport, brightness, notif.
+     *   - sd_storage (microSD, SDSPI on SPI3): message history archive.
+     *   - message_store: uses the SD when mounted, falls back to RAM only.
+     * The microSD SPI bus is independent of the C6 SDMMC/SDIO link. */
     app_storage_init();
     settings_store_init();
-    message_store_init();
     s_active_transport = settings_store_get()->transport;
     ESP_ERROR_CHECK(channel_service_init(send_admin_frame));
+
+    /* Board bring-up, then power the C6 coprocessor BEFORE esp_hosted. */
+    m5::tab5::m5tab5_component_config_t board_cfg = {};
+    ESP_ERROR_CHECK(s_board.begin(board_cfg));
+    ESP_LOGI(TAG, "powering C6 (wlan_power=ON)");
+    ESP_ERROR_CHECK(s_board.wlan_power(true));
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    /* Keep eager C6 initialization for BLE/Wi-Fi. The microSD uses its own
+     * SPI3 bus and no longer depends on the SDMMC initialization order. */
+    {
+        esp_err_t hosted = esp_hosted_init();
+        if (hosted != ESP_OK) {
+            ESP_LOGW(TAG, "early esp_hosted_init: %s (continuing; wifi_service will retry)",
+                     esp_err_to_name(hosted));
+        }
+    }
+
+    sd_storage_init();
+    message_store_init();
 
     /* Restore persisted messages into AppState so history shows on first load. */
     {
@@ -97,15 +121,8 @@ extern "C" void app_main(void)
             bool is_self = (hist[i].direction == 1);
             app_state_add_channel_message(hist[i].from_node, hist[i].text, is_self, hist[i].timestamp_us, hist[i].channel_idx, false);
         }
-        if (n) ESP_LOGI(TAG, "restored %lu messages from NVS", (unsigned long)n);
+        if (n) ESP_LOGI(TAG, "restored %lu messages from storage", (unsigned long)n);
     }
-
-    /* Board bring-up, then power the C6 coprocessor BEFORE esp_hosted. */
-    m5::tab5::m5tab5_component_config_t board_cfg = {};
-    ESP_ERROR_CHECK(s_board.begin(board_cfg));
-    ESP_LOGI(TAG, "powering C6 (wlan_power=ON)");
-    ESP_ERROR_CHECK(s_board.wlan_power(true));
-    vTaskDelay(pdMS_TO_TICKS(100));
 
     /* Display + LVGL shell first, so chrome is visible while the radio connects. */
     ESP_ERROR_CHECK(app_lcd_lvgl_init(s_board));

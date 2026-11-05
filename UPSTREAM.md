@@ -13,8 +13,9 @@ Without a license, default copyright law applies: the original author retains
 all rights, and no permission to reproduce, distribute, or create derivative
 works is granted.
 
-This fork has therefore been kept **local** and is **not published** or
-redistributed. It exists only for private development and testing.
+This fork is published at https://github.com/tpklge/Tab5-Meshtastic.
+The fork contains a LICENSE file; this does not establish or change the
+licensing status of the original upstream code.
 
 ## What this fork adds
 
@@ -22,7 +23,7 @@ redistributed. It exists only for private development and testing.
 - Transport abstraction layer (IMeshTransport interface)
 - MeshSession: reusable Meshtastic protocol handling above both transports
 - SerialFramer: non-blocking 0x94C3 frame parser
-- Persistent message history (SPIFFS, versioned binary format)
+- Persistent message history (microSD via SDSPI/SPI3, PSRAM mirror)
 - Persistent app settings (transport selection, channel, UI preferences)
 - Channel management (list, create, edit, PSK, primary/secondary/disabled)
 - Screen brightness control

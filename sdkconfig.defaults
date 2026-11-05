@@ -127,3 +127,7 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 # while retaining the 16 KiB main-task stack needed for LVGL startup.
 # CONFIG_COMPILER_OPTIMIZATION_DEBUG is not set
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# Dark theme without transient style animations during widget rebuilds.
+CONFIG_LV_THEME_DEFAULT_DARK=y
+CONFIG_LV_THEME_DEFAULT_TRANSITION_TIME=0

@@ -178,3 +178,12 @@ Over BLE each characteristic carries a **raw protobuf** (no `0x94c3` framing —
 that's serial/TCP only). Handshake: connect → bond (PIN) → MTU exchange →
 discover chars → subscribe FromNum → write `want_config_id` → drain FromRadio
 until `config_complete_id` → steady-state poll.
+
+## microSD and Wi-Fi (2026-11-05)
+
+Message history now uses `/sdcard/t5msg.bin` over SDSPI/SPI3 with LDO 4.
+The 120 KB history mirror lives in PSRAM to preserve internal RAM for networking.
+SD mount, Wi-Fi scan/connection and NTP have been verified; history recovery and
+long-duration concurrent I/O still need validation. See
+[coexistence status](docs/SD_WIFI_COEXISTENCE_PLAN.md). The current app exceeds
+the historical 1600 KiB Launcher slot; check release sizes before installation.

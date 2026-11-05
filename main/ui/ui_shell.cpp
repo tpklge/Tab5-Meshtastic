@@ -617,6 +617,7 @@ lv_obj_t* make_nodes_panel(lv_obj_t* parent)
     }
 
     lv_obj_t* list = box(panel, lv_pct(100), 0);
+    bg(list, C_BG);   /* opaque bg so lv_obj_clean() during rebuild never exposes the LVGL default (blue flash) */
     lv_obj_set_flex_grow(list, 1);
     flex_col(list);
     lv_obj_set_style_pad_hor(list, 8, 0);
@@ -1166,6 +1167,7 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
     lv_obj_add_flag(S.chat_dm_bar, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t* list = box(panel, lv_pct(100), 0);
+    bg(list, C_BG);   /* opaque bg so lv_obj_clean() during rebuild never exposes the LVGL default (blue flash) */
     lv_obj_set_flex_grow(list, 1);
     flex_col(list);
     lv_obj_set_style_pad_hor(list, 16, 0);
@@ -1450,6 +1452,11 @@ lv_obj_t* make_radio_panel(lv_obj_t* parent)
         settings_store_set_transport(t);
         /* Confirm restart via modal dialog */
         lv_obj_t* dlg = lv_msgbox_create(nullptr);
+        /* Store the previous transport value on the dialog so the cancel path
+         * restores it explicitly instead of inferring it from the (new) current
+         * value — robust if an NVS flush failed and the in-memory and persisted
+         * states diverge. */
+        lv_obj_set_user_data(dlg, (void*)(uintptr_t)cur);
         lv_msgbox_add_title(dlg, "Reiniciar?");
         const char* msg = (t == 0)
             ? "Mudar para BLE requer reinicializar o Tab5.\nO radio BLE sera ativado no proximo boot."
@@ -1457,9 +1464,10 @@ lv_obj_t* make_radio_panel(lv_obj_t* parent)
         lv_msgbox_add_text(dlg, msg);
         lv_obj_t* cancel = lv_msgbox_add_footer_button(dlg, "Cancelar");
         lv_obj_add_event_cb(cancel, [](lv_event_t* e2) {
-            /* Revert the setting */
-            settings_store_set_transport(settings_store_get()->transport == 0 ? 1 : 0);
-            lv_msgbox_close(static_cast<lv_obj_t*>(lv_event_get_user_data(e2)));
+            lv_obj_t* d = static_cast<lv_obj_t*>(lv_event_get_user_data(e2));
+            uint8_t prev = (uint8_t)(uintptr_t)lv_obj_get_user_data(d);
+            settings_store_set_transport(prev);
+            lv_msgbox_close(d);
         }, LV_EVENT_CLICKED, dlg);
         lv_obj_t* confirm = lv_msgbox_add_footer_button(dlg, "Reiniciar agora");
         lv_obj_add_event_cb(confirm, [](lv_event_t*) { esp_restart(); }, LV_EVENT_CLICKED, nullptr);

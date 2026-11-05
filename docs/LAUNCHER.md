@@ -1,5 +1,12 @@
 # M5Launcher — OTA, Backup and Restore
 
+> **2026-11-05 update:** messages now reside in `/sdcard/t5msg.bin`, settings
+> and Wi-Fi credentials remain in NVS. SPIFFS is optional for exports. Back up
+> the message file with the app stopped; the SPIFFS backup instructions below
+> describe the historical backend. The current reference app is 1,664,560 bytes,
+> exceeding the historical 1600 KiB Launcher slot. Install only into a sufficiently
+> large app partition. Standalone bootloader/partition assets are not Launcher OTA.
+
 > Device check (2026-10-01): this Tab5 currently has a Launcher-managed
 > `tab5me` app partition of **1600 KiB** at `0x1a0000`. The `partitions.csv`
 > below describes a standalone full-flash installation; it is not the table

@@ -1,5 +1,19 @@
 # Changelog
 
+## [2026-11-05] — microSD/Wi-Fi coexistence and internal RAM recovery
+
+- Move message history to microSD via SDSPI/SPI3 with LDO 4 power control.
+- Allocate the 120 KB history mirror in PSRAM, freeing internal RAM after repeated
+  `tcpip_init` mailbox allocation panics.
+- Keep RAM-only operation when the card cannot mount; never auto-format it.
+- Harden BLE read acquisition and reject oversized frames; restore the previous
+  transport explicitly when cancelling a change.
+- Apply opaque dark UI backgrounds and require manual connection to open Wi-Fi.
+- Hardware: SD mount observed; user confirmed Wi-Fi scan, connection and NTP.
+  History recovery, cold boot and prolonged simultaneous I/O remain unverified.
+- Current app exceeds the previously documented 1600 KiB Launcher slot; check
+  release asset size before installing. See `docs/SD_WIFI_COEXISTENCE_PLAN.md`.
+
 ## [2026-10-08] — Configurable screen inactivity timeout
 
 - Added **SET > DISPLAY > Apagar tela por inatividade** with Never, 30 seconds,

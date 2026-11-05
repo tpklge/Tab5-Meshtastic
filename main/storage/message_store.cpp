@@ -1,58 +1,132 @@
 #include "message_store.h"
+#include "sd_storage.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "nvs.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 #include <stdio.h>
 
 static const char* TAG = "msg_store";
-static const char* NS  = "t5msgs";
 
-/* Ring buffer: 30 slots, each 120 bytes stored as an NVS blob.
- * Compact on-disk struct — only what the UI needs. */
-#define MSG_SLOTS 30
-#define MSG_TEXT_MAX 107
+/* Ring buffer backed by a single file on the microSD. 1000 slots × 120 bytes
+ * ≈ 120 KB — well under the SD capacity and ~30× what the NVS backend held.
+ * Keeping the on-disk record (packed, 120 bytes) binary-compatible with the
+ * old NVS layout so that any pre-existing data could be imported later. */
+#define MSG_SLOTS      1000
+#define MSG_TEXT_MAX   106
+#define MSG_FILE_MAGIC 0x4D534754u   /* "MSGT" */
+#define MSG_PATH       SD_MOUNT_POINT "/t5msg.bin"
 
 typedef struct __attribute__((packed)) {
-    uint8_t  direction;     /* 0=rx, 1=tx */
+    uint8_t  direction;      /* bit 0 = is_tx; bits 1..3 = channel_idx */
     uint32_t from_node;
     int64_t  timestamp_us;
     uint8_t  text_len;
     char     text[MSG_TEXT_MAX];
-} nvs_msg_t;                /* 120 bytes */
+} msg_rec_t;                 /* 120 bytes (1 + 4 + 8 + 1 + 106) */
 
-static nvs_handle_t s_nvs   = 0;
-static uint16_t     s_head  = 0;   /* next slot to write (0..MSG_SLOTS-1) */
-static uint16_t     s_count = 0;   /* messages stored (0..MSG_SLOTS) */
-static uint32_t     s_total = 0;   /* monotonic append counter */
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint32_t head;           /* next slot to write (0..MSG_SLOTS-1)   */
+    uint32_t count;          /* records stored    (0..MSG_SLOTS)      */
+    uint32_t total;          /* monotonic append counter (lifetime)   */
+    uint32_t reserved[4];
+} msg_file_hdr_t;            /* 32 bytes */
 
-static void slot_key(char* buf, uint16_t idx)
+static_assert(sizeof(msg_rec_t) == 120, "msg_rec_t must be 120 bytes");
+static_assert(sizeof(msg_file_hdr_t) == 32, "msg_file_hdr_t must be 32 bytes");
+
+static bool     s_persistent = false;   /* SD-backed file is usable */
+static uint32_t s_head  = 0;
+static uint32_t s_count = 0;
+static uint32_t s_total = 0;
+
+/* RAM mirror of recent messages, kept whether the backend is SD or RAM-only.
+ * Enables fast load_page() without re-reading the SD on every refresh. */
+/* The 120 KB mirror must not consume internal RAM needed by FreeRTOS
+ * queues, lwIP and the C6 transport. Tab5 provides external PSRAM. */
+static msg_rec_t* s_ring = nullptr;
+
+static inline off_t slot_offset(uint32_t slot)
 {
-    snprintf(buf, 8, "m%02u", (unsigned)idx);
+    return (off_t)sizeof(msg_file_hdr_t) + (off_t)slot * (off_t)sizeof(msg_rec_t);
+}
+
+static esp_err_t create_empty_file(void)
+{
+    FILE* f = fopen(MSG_PATH, "wb");
+    if (!f) return ESP_FAIL;
+    msg_file_hdr_t hdr = { MSG_FILE_MAGIC, 0, 0, 0, {0,0,0,0} };
+    fwrite(&hdr, 1, sizeof(hdr), f);
+    /* Pre-size the file to the full ring so later seeks never grow it. */
+    msg_rec_t zero = {};
+    for (uint32_t i = 0; i < MSG_SLOTS; i++) fwrite(&zero, 1, sizeof(zero), f);
+    fclose(f);
+    return ESP_OK;
 }
 
 esp_err_t message_store_init(void)
 {
-    esp_err_t err = nvs_open(NS, NVS_READWRITE, &s_nvs);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_open: %s", esp_err_to_name(err));
-        s_nvs = 0;
-        return err;
+    s_head = s_count = s_total = 0;
+    s_persistent = false;
+    if (!s_ring) {
+        s_ring = static_cast<msg_rec_t*>(heap_caps_calloc(
+            MSG_SLOTS, sizeof(msg_rec_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+    if (!s_ring) {
+        ESP_LOGE(TAG, "message mirror PSRAM allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+    memset(s_ring, 0, MSG_SLOTS * sizeof(msg_rec_t));
+    ESP_LOGI(TAG, "message mirror in PSRAM (%u bytes); internal heap free=%u, largest=%u",
+             (unsigned)(MSG_SLOTS * sizeof(msg_rec_t)),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+
+    if (!sd_storage_available()) {
+        ESP_LOGW(TAG, "SD not available — running in RAM-only mode (no persistence)");
+        return ESP_OK;
     }
 
-    uint16_t head = 0, count = 0;
-    uint32_t total = 0;
-    nvs_get_u16(s_nvs, "head",  &head);
-    nvs_get_u16(s_nvs, "count", &count);
-    nvs_get_u32(s_nvs, "total", &total);
+    FILE* f = fopen(MSG_PATH, "rb");
+    if (!f) {
+        /* First boot on this card — initialize the file. */
+        if (create_empty_file() != ESP_OK) {
+            ESP_LOGE(TAG, "failed to create %s — RAM-only mode", MSG_PATH);
+            return ESP_OK;
+        }
+        f = fopen(MSG_PATH, "rb");
+        if (!f) {
+            ESP_LOGE(TAG, "re-open after create failed — RAM-only mode");
+            return ESP_OK;
+        }
+    }
 
-    if (head >= MSG_SLOTS) head = 0;
-    if (count > MSG_SLOTS) count = MSG_SLOTS;
+    msg_file_hdr_t hdr = {};
+    if (fread(&hdr, 1, sizeof(hdr), f) != sizeof(hdr) || hdr.magic != MSG_FILE_MAGIC) {
+        /* Corrupt or legacy file — rebuild empty. */
+        fclose(f);
+        ESP_LOGW(TAG, "bad/legacy msg file — reinitializing");
+        if (create_empty_file() != ESP_OK) return ESP_OK;
+        s_persistent = true;
+        return ESP_OK;
+    }
 
-    s_head  = head;
-    s_count = count;
-    s_total = total;
-    ESP_LOGI(TAG, "loaded: %u messages (total ever=%lu)", (unsigned)s_count, (unsigned long)s_total);
+    if (hdr.head >= MSG_SLOTS) hdr.head = 0;
+    if (hdr.count > MSG_SLOTS) hdr.count = MSG_SLOTS;
+    s_head  = hdr.head;
+    s_count = hdr.count;
+    s_total = hdr.total;
+
+    /* Preload the entire ring into RAM so load_page() never touches the SD. */
+    fseek(f, (long)sizeof(msg_file_hdr_t), SEEK_SET);
+    size_t n = fread(s_ring, sizeof(msg_rec_t), MSG_SLOTS, f);
+    fclose(f);
+    (void)n;
+
+    s_persistent = true;
+    ESP_LOGI(TAG, "loaded from SD: %lu messages (total ever=%lu, path=%s)",
+             (unsigned long)s_count, (unsigned long)s_total, MSG_PATH);
     return ESP_OK;
 }
 
@@ -63,10 +137,9 @@ esp_err_t message_store_append(uint32_t from_node, uint32_t /*to_node*/,
                                 int16_t /*snr*/, int16_t /*rssi*/,
                                 const char* text)
 {
-    if (!s_nvs) return ESP_OK;  /* silent no-op — already logged at init */
-
-    nvs_msg_t msg = {};
-    msg.direction    = (is_tx ? 1 : 0) | ((channel_idx & 7) << 1); // v1-compatible: bits 1..3 store channel
+    if (!s_ring) return ESP_ERR_INVALID_STATE;
+    msg_rec_t msg = {};
+    msg.direction    = (is_tx ? 1 : 0) | ((channel_idx & 7) << 1);
     msg.from_node    = from_node;
     msg.timestamp_us = timestamp_us ? timestamp_us : esp_timer_get_time();
     if (text) {
@@ -75,52 +148,61 @@ esp_err_t message_store_append(uint32_t from_node, uint32_t /*to_node*/,
         memcpy(msg.text, text, len);
     }
 
-    char key[8];
-    slot_key(key, s_head);
-    esp_err_t err = nvs_set_blob(s_nvs, key, &msg, sizeof(msg));
-    if (err != ESP_OK) { ESP_LOGW(TAG, "nvs_set_blob(%s): %s", key, esp_err_to_name(err)); return err; }
-
+    /* RAM ring always updated — the UI reads from here. */
+    s_ring[s_head] = msg;
+    uint32_t slot = s_head;
     s_head = (s_head + 1) % MSG_SLOTS;
     if (s_count < MSG_SLOTS) s_count++;
     s_total++;
 
-    nvs_set_u16(s_nvs, "head",  s_head);
-    nvs_set_u16(s_nvs, "count", s_count);
-    nvs_set_u32(s_nvs, "total", s_total);
-    nvs_commit(s_nvs);
+    if (!s_persistent) return ESP_OK;
+
+    FILE* f = fopen(MSG_PATH, "r+b");
+    if (!f) {
+        ESP_LOGW(TAG, "fopen(%s) failed on append", MSG_PATH);
+        return ESP_FAIL;
+    }
+    if (fseek(f, slot_offset(slot), SEEK_SET) != 0 ||
+        fwrite(&msg, 1, sizeof(msg), f) != sizeof(msg)) {
+        fclose(f);
+        ESP_LOGW(TAG, "record write failed at slot %lu", (unsigned long)slot);
+        return ESP_FAIL;
+    }
+    /* Header rewrite is cheap (32 bytes, same page) and keeps head/count/total
+     * durable across a sudden power loss. */
+    fseek(f, 0, SEEK_SET);
+    msg_file_hdr_t hdr = { MSG_FILE_MAGIC, s_head, s_count, s_total, {0,0,0,0} };
+    fwrite(&hdr, 1, sizeof(hdr), f);
+    fflush(f);
+    fclose(f);
     return ESP_OK;
 }
 
 uint32_t message_store_load_page(uint8_t /*channel_idx*/, uint32_t page,
                                   msg_loaded_t* out, uint32_t count)
 {
-    if (!s_nvs || !out || count == 0 || s_count == 0) return 0;
+    if (!out || count == 0 || s_count == 0) return 0;
 
-    /* Walk the ring oldest→newest. Oldest slot: (head - count + MSG_SLOTS) % MSG_SLOTS */
     uint32_t skip    = page * count;
     uint32_t loaded  = 0;
     uint32_t matched = 0;
 
-    for (uint16_t i = 0; i < s_count && loaded < count; i++) {
-        uint16_t slot = (uint16_t)((s_head - s_count + i + MSG_SLOTS) % MSG_SLOTS);
-        char key[8];
-        slot_key(key, slot);
-
-        nvs_msg_t msg = {};
-        size_t sz = sizeof(msg);
-        if (nvs_get_blob(s_nvs, key, &msg, &sz) != ESP_OK) continue;
-
+    for (uint32_t i = 0; i < s_count && loaded < count; i++) {
+        uint32_t slot = (s_head + MSG_SLOTS - s_count + i) % MSG_SLOTS;
+        const msg_rec_t* msg = &s_ring[slot];
         if (matched++ < skip) continue;
 
         msg_loaded_t* dst = &out[loaded++];
         memset(dst, 0, sizeof(*dst));
         dst->seq          = s_total - s_count + matched;
-        dst->direction    = msg.direction & 1;
-        dst->channel_idx  = (msg.direction >> 1) & 7;
-        dst->from_node    = msg.from_node;
-        dst->timestamp_us = msg.timestamp_us;
-        uint8_t tlen = msg.text_len < (uint8_t)(sizeof(dst->text) - 1) ? msg.text_len : (uint8_t)(sizeof(dst->text) - 1);
-        memcpy(dst->text, msg.text, tlen);
+        dst->direction    = msg->direction & 1;
+        dst->channel_idx  = (msg->direction >> 1) & 7;
+        dst->from_node    = msg->from_node;
+        dst->timestamp_us = msg->timestamp_us;
+        uint8_t tlen = msg->text_len < (uint8_t)(sizeof(dst->text) - 1)
+                           ? msg->text_len
+                           : (uint8_t)(sizeof(dst->text) - 1);
+        memcpy(dst->text, msg->text, tlen);
         dst->text[tlen] = '\0';
     }
     return loaded;
@@ -130,16 +212,14 @@ uint32_t message_store_total(void) { return s_total; }
 
 esp_err_t message_store_clear(void)
 {
-    if (!s_nvs) return ESP_OK;
-    for (uint16_t i = 0; i < MSG_SLOTS; i++) {
-        char key[8]; slot_key(key, i);
-        nvs_erase_key(s_nvs, key);
+    if (!s_ring) return ESP_ERR_INVALID_STATE;
+    memset(s_ring, 0, MSG_SLOTS * sizeof(msg_rec_t));
+    s_head = s_count = s_total = 0;
+    if (s_persistent) {
+        if (create_empty_file() != ESP_OK) {
+            ESP_LOGW(TAG, "clear: failed to rewrite file");
+        }
     }
-    s_head = 0; s_count = 0; s_total = 0;
-    nvs_set_u16(s_nvs, "head",  0);
-    nvs_set_u16(s_nvs, "count", 0);
-    nvs_set_u32(s_nvs, "total", 0);
-    nvs_commit(s_nvs);
     ESP_LOGI(TAG, "cleared");
     return ESP_OK;
 }

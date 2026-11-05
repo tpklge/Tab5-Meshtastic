@@ -3,7 +3,7 @@
 Cliente Meshtastic para o **M5Stack Tab5** (ESP32-P4 + ESP32-C6 via esp-hosted/SDIO).
 
 Derivado de [hardparking/Tab5-Meshtastic](https://github.com/hardparking/Tab5-Meshtastic).
-Mantido como repositório privado — o upstream não possui licença de distribuição.
+Repositório deste fork: [tpklge/Tab5-Meshtastic](https://github.com/tpklge/Tab5-Meshtastic).
 
 ---
 
@@ -13,10 +13,10 @@ Mantido como repositório privado — o upstream não possui licença de distrib
 |------|-----------|
 | **Transporte BLE** | Descoberta por UUID, pareamento com PIN, dispositivo salvo, reconexão automática |
 | **Transporte UART** | RAK3172H via porta Grove (GPIO53/54, 115200 baud); seleção persiste entre reinicializações |
-| **Chat** | Bolhas de mensagem por canal, histórico persistente (SPIFFS), rascunhos por canal |
+| **Chat** | Bolhas de mensagem por canal, histórico em microSD (SDSPI/SPI3, LDO 4, espelho em PSRAM), rascunhos por canal |
 | **Nós** | Lista ordenada, barras de sinal, última visão, bateria, telemetria |
 | **Canais** | 8 slots, editor completo (nome, PSK, flags MQTT), geração de QR, importação via câmera |
-| **Wi-Fi** | Scan assíncrono, até 4 redes salvas, reconexão automática |
+| **Wi-Fi** | Scan assíncrono, rede salva, reconexão automática em redes com senha |
 | **Relógio** | Sincronização SNTP pós-IP; fallback para RTC manual; carimbos no chat |
 | **Bateria** | Leitura INA226 via I2C, tensão exibida na faixa de diagnóstico |
 | **Brilho** | Controle via LEDC (5–100%), persiste entre boots |
@@ -40,6 +40,10 @@ a iluminação apagada.
 - Rádio Meshtastic externo: BLE (ex: M5Stack Unit C6L) **ou** RAK3172H via Grove
 
 ---
+
+Detalhes atuais: [microSD + Wi-Fi](docs/SD_WIFI_COEXISTENCE_PLAN.md).
+O binário atual excede o slot antigo de 1600 KiB do Launcher; confira o tamanho
+na release e use uma partição compatível.
 
 ## Build e gravação
 
@@ -78,7 +82,7 @@ main/
   mesh/       — mesh_proto: encode/decode nanopb puro (sem BLE, sem LVGL)
   ui/         — Shell LVGL, telas, theme.h (tokens de design)
   board/      — lcd_tools, teclado, battery_monitor, áudio, câmera
-  storage/    — settings_store, message_store (SPIFFS), app_storage
+  storage/    — settings_store, message_store (microSD), sd_storage, app_storage
   network/    — wifi_service, SNTP
 ```
 

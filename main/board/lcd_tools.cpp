@@ -121,6 +121,32 @@ esp_err_t app_lcd_lvgl_init(m5::tab5::m5tab5_component& board)
         return ESP_FAIL;
     }
 
+    /* Re-initialize the default theme with dark mode + blue primary + zero
+     * transition. Dark mode so the theme's screen background is dark grey
+     * instead of the light-blue 0xeaeff3; zero transition so style changes on
+     * new widgets apply instantly (an 80 ms animated transition is visible as
+     * a flash). Keeping the default theme preserves the stock LVGL look for
+     * buttons / textareas / keyboard, which the UI depends on. */
+    lvgl_port_lock(0);
+    lv_theme_t* th = lv_theme_default_init(
+        disp,
+        lv_color_hex(0x3B82F6),   /* blue primary */
+        lv_color_hex(0x0C0F0E),   /* C_BG — secondary */
+        true,                      /* dark mode */
+        LV_FONT_DEFAULT);
+    lv_display_set_theme(disp, th);
+
+    /* Force an opaque dark background on the screen itself (the theme's screen
+     * style may still have a light bg_color baked in from an earlier light-mode
+     * state). This is what fills any area not covered by a child widget during
+     * a full redraw, so it must be guaranteed dark. */
+    lv_obj_t* scr = lv_display_get_screen_active(disp);
+    if (scr) {
+        lv_obj_set_style_bg_color(scr, lv_color_hex(0x0C0F0E), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+    lvgl_port_unlock();
+
     /* Register touch using a direct LVGL indev — avoids lvgl_port_add_touch
      * symbol-conflict (m5 vs espressif components both define it). The read
      * callback applies the CCW-90° coordinate transform to match the PPA

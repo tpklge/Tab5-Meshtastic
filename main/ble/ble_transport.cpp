@@ -18,6 +18,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <atomic>
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -87,7 +88,11 @@ static struct {
 
 /* ---- sync engine state ---- */
 static esp_timer_handle_t s_poll_timer    = nullptr;
-static volatile bool      s_read_pending  = false;
+/* Accessed by NimBLE host task (read_cb) and the esp_timer task (poll_cb) across
+ * cores; volatile does not provide atomicity. std::atomic prevents torn reads and
+ * the TOCTOU window where poll_cb could see pending=false after a timeout clear
+ * while a late read_cb is still running. */
+static std::atomic<bool>  s_read_pending{false};
 static int64_t            s_read_started_us = 0;
 
 static uint16_t s_mtu        = 23;     /* negotiated ATT MTU                  */
@@ -435,6 +440,18 @@ static int read_cb(uint16_t, const struct ble_gatt_error* error,
     if (len == 0) return 0;   /* queue empty; poll/next-notify resumes draining */
 
     uint8_t buf[512];
+    /* Reject frames larger than our buffer rather than silently truncate: a
+     * truncated FromRadio would be fed to nanopb as a well-formed-looking but
+     * malformed proto and produce garbage in AppState. Meshtastic's own cap is
+     * 512 bytes, so anything larger is from a non-compliant / hostile peer. */
+    if (len > sizeof(buf)) {
+        ESP_LOGW(TAG, "FromRadio oversize frame dropped (%u > %u)",
+                 (unsigned)len, (unsigned)sizeof(buf));
+        s_d.last_err = -1;
+        publish_diag();
+        read_fromradio();   /* keep draining */
+        return 0;
+    }
     uint16_t out = 0;
     ble_hs_mbuf_to_flat(attr->om, buf, sizeof(buf), &out);
     s_d.reads++;
@@ -453,11 +470,15 @@ static int read_fromradio(void)
 {
     /* Never read before the gated drain has armed (want_config sent at a settled
      * MTU); an early read at MTU 23 truncates the first packets. */
-    if (!s_drained || s_read_pending || s_conn.fromradio_handle == 0) return 0;
-    s_read_pending    = true;
+    if (!s_drained || s_conn.fromradio_handle == 0) return 0;
+    /* Atomically acquire the single-in-flight slot: only the caller that flips
+     * false→true may issue the ble_gattc_read. Prevents two reads being issued
+     * simultaneously from the host task and the poll task. */
+    bool expected = false;
+    if (!s_read_pending.compare_exchange_strong(expected, true)) return 0;
     s_read_started_us = esp_timer_get_time();
     int rc = ble_gattc_read(s_conn.conn_handle, s_conn.fromradio_handle, read_cb, NULL);
-    if (rc != 0) { s_read_pending = false; s_d.last_err = rc; }
+    if (rc != 0) { s_read_pending.store(false); s_d.last_err = rc; }
     return rc;
 }
 

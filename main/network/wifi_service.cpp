@@ -224,7 +224,10 @@ void poll_scan(int64_t now) {
     status(found ? "Busca concluida. Escolha uma rede ou informe o nome." : "Nenhuma rede encontrada. Tente novamente ou informe o nome.");
 }
 void worker(void*) {
-    if (auto_connect && saved.ssid[0]) { Command cmd{}; cmd.action = CONNECT; cmd.use_saved = true; handle(cmd); }
+    /* Auto-connect only to saved networks that have a password. An open network
+     * (empty password) with the same SSID could be an evil-twin — require manual
+     * reconnect for those. */
+    if (auto_connect && saved.ssid[0] && saved.password[0]) { Command cmd{}; cmd.action = CONNECT; cmd.use_saved = true; handle(cmd); }
     for (;;) {
         Command cmd{};
         if (xQueueReceive(queue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) { handle(cmd); memset(&cmd, 0, sizeof(cmd)); }

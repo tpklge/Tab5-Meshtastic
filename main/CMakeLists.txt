@@ -31,6 +31,7 @@ idf_component_register(
         "storage/app_storage.cpp"
         "storage/message_store.cpp"
         "storage/settings_store.cpp"
+        "storage/sd_storage.cpp"
     INCLUDE_DIRS
         "."
         "board"
@@ -60,6 +61,9 @@ idf_component_register(
         esp_hosted
         esp_wifi_remote
         esp_driver_sdmmc
+        sdmmc
+        esp_driver_spi
+        esp_driver_sdspi
         esp_driver_uart
         esp_driver_i2s
         esp_driver_i2c
@@ -67,6 +71,8 @@ idf_component_register(
         esp_timer
         esp_http_client
         spiffs
+        fatfs
+        vfs
         esp_rom
         m5_tab5_component
         m5_tab5_keyboard_component
