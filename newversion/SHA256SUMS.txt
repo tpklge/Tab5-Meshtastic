@@ -1,1 +1,1 @@
-060f5c027acad96003212ddae773a507615cda62f2393fd9bb97f7488de940f4  tab5_meshtastic_v2.bin
+35c44c0cda564accda0b8ebdedac4a39740b29e3850b21d73415864c3d6f77bc  tab5_meshtastic_v2.bin

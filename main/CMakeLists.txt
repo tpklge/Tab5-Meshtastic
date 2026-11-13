@@ -12,6 +12,7 @@ idf_component_register(
         "app/app_state.cpp"
         "app/app_clock.cpp"
         "network/wifi_service.cpp"
+        "network/wifi_netif_guard.cpp"
         "network/position_service.cpp"
         "ui/screens/wifi_settings.cpp"
         "app/clock_calendar.cpp"
@@ -77,4 +78,12 @@ idf_component_register(
         m5_tab5_keyboard_component
         meshtastic_protos
         espressif__i2c_bus
+)
+
+# Guard the ESP-IDF 5.4 netif actions without changing the installed SDK.
+target_link_libraries(${COMPONENT_LIB} INTERFACE
+    "-Wl,-u,__wrap_esp_netif_action_start"
+    "-Wl,-u,__wrap_esp_netif_action_stop"
+    "-Wl,--wrap=esp_netif_action_start"
+    "-Wl,--wrap=esp_netif_action_stop"
 )

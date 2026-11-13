@@ -131,3 +131,7 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 # Dark theme without transient style animations during widget rebuilds.
 CONFIG_LV_THEME_DEFAULT_DARK=y
 CONFIG_LV_THEME_DEFAULT_TRANSITION_TIME=0
+
+# Settings and export files use long names, including .bin.tmp/.bin.bak.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255

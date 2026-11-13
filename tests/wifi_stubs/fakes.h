@@ -10,6 +10,7 @@ inline int64_t fake_now=1000000;
 inline int64_t esp_timer_get_time() { return fake_now; }
 using esp_event_base_t = int;
 constexpr int IP_EVENT=1, WIFI_EVENT=2, ESP_EVENT_ANY_ID=-1;
+constexpr int WIFI_EVENT_STA_START=5, WIFI_EVENT_STA_STOP=6;
 constexpr int WIFI_EVENT_STA_DISCONNECTED=1, WIFI_EVENT_SCAN_DONE=2, IP_EVENT_STA_GOT_IP=3, IP_EVENT_STA_LOST_IP=4;
 struct wifi_event_sta_disconnected_t { unsigned reason; };
 struct wifi_event_sta_scan_done_t { unsigned status; };

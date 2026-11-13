@@ -98,3 +98,44 @@ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
 
 Validar no Tab5: digitar e enviar por Enter; enviar pelo botão da tela; confirmar
 recepção em outro nó. Nenhum destes testes de host comprova entrega por LoRa.
+
+### Correções de Wi-Fi e persistência no microSD
+
+A captura USB no Tab5 confirmou `assert failed: netif_add ... (netif already
+added)` após `Scan start Req`. A pilha passou por `esp_netif_start_api`,
+`esp_netif_lwip_add` e `netif_add`; o dispositivo reiniciou no Launcher.
+
+`wifi_netif_guard.cpp` intercepta as ações de início/fim da interface STA
+sem alterar o SDK instalado. Um START repetido é ignorado até STOP;
+desconexão, por si só, não remove a interface do lwIP. Os handlers padrão
+do SDK continuam responsáveis por MAC, recepção de pacotes e DHCP.
+
+O salvamento tinha duas incompatibilidades com FAT. O VFS do ESP-IDF 5.4
+usa `f_rename`, que retorna `EEXIST` se o destino já existe. As atualizações
+agora movem o valor anterior para `.bak`, publicam o `.tmp` sincronizado
+e removem o backup após sucesso. Se a publicação falhar, o valor anterior
+é restaurado; uma leitura pode recuperar o backup após interrupção entre
+as renomeações. A exclusão também remove esse backup. Erros de I/O registram
+a operação, o caminho e `errno`, sem expor credenciais.
+
+Além disso, `CONFIG_FATFS_LFN_NONE` rejeitava nomes como
+`t5wifi_credentials.bin` e `t5wifi_auto.bin.tmp`. O firmware habilita
+`CONFIG_FATFS_LFN_HEAP` e `CONFIG_FATFS_MAX_LFN=255` em `sdkconfig.defaults`;
+o armazenamento verifica essa exigência em tempo de compilação. O histórico
+`t5msg.bin` cabe no formato 8.3, por isso podia funcionar enquanto as novas
+preferências não eram salvas.
+
+Validação automatizada:
+
+- `python3 tests/run_wifi_tests.py`: busca assíncrona, START duplicado,
+  substituição no FAT, rollback e recuperação de gravação interrompida.
+- `python3 tests/run_fatfs_filename_tests.py`: usa o parser real do FatFs do
+  ESP-IDF (via `IDF_PATH`, ou `~/esp/esp-idf`) e `build/config/sdkconfig.h`.
+  Reproduz `FR_INVALID_NAME` sem LFN e confirma a aceitação dos nomes de
+  preferências, credenciais, temporários, backups e exportação com LFN.
+- `python3 tests/run_chat_tests.py`: persistência de preferências e interface.
+- `idf.py build`: compilação do firmware.
+
+Em 2026-11-13, o usuário confirmou conexão Wi-Fi e o funcionamento do
+salvamento com o binário que habilita LFN. O binário validado e seu SHA-256
+estão em `newversion/`.
