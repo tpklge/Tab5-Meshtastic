@@ -1,6 +1,7 @@
 #include "../main/network/wifi_service.cpp"
 #include <cassert>
 #include <cstdio>
+extern "C" bool sd_storage_available() { return false; }
 esp_err_t app_clock_sync(time_t) { return ESP_OK; }
 int main() {
     assert(wifi_service_init() == ESP_OK);

@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='tab5-chat-tests-') as temp:
          str(root/'main/app/clock_calendar.cpp'), str(root/'main/board/battery_level.cpp'), '-o', str(clock)])
     run([str(clock)])
     settings = out/'settings-test'
-    run(['c++', '-I'+str(root/'tests/settings_stubs'), *flags,
+    run(['c++', '-DSD_MOUNT_POINT="."', '-I'+str(root/'tests/settings_stubs'), *flags,
          str(root/'tests/settings_store_test.cpp'), '-o', str(settings)])
     run([str(settings)])
     config = out/'lv_conf.h'

@@ -1123,8 +1123,8 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
     lv_obj_set_size(export_btn, 130, 40);
     lv_obj_add_event_cb(export_btn, [](lv_event_t*) {
         static msg_loaded_t buf[200];
-        FILE* f = fopen("/spiffs/chat_export.txt", "w");
-        if (!f) { ESP_LOGE("export", "cannot open /spiffs/chat_export.txt"); return; }
+        FILE* f = fopen("/sdcard/chat_export.txt", "w");
+        if (!f) { ESP_LOGE("export", "cannot open /sdcard/chat_export.txt"); return; }
         uint32_t total = 0, page = 0;
         do {
             uint32_t n = message_store_load_page(0xFF, page++, buf, 200);
@@ -1139,7 +1139,7 @@ lv_obj_t* make_chat_panel(lv_obj_t* parent)
         fclose(f);
         if (S.chat_input)
             lv_textarea_set_placeholder_text(S.chat_input,
-                total ? "Exportado: /spiffs/chat_export.txt" : "Nenhuma mensagem para exportar");
+                total ? "Exportado: /sdcard/chat_export.txt" : "Nenhuma mensagem para exportar");
     }, LV_EVENT_CLICKED, nullptr);
 
     /* DM context bar — hidden by default, shown when dm_peer != 0 */
@@ -1454,7 +1454,7 @@ lv_obj_t* make_radio_panel(lv_obj_t* parent)
         lv_obj_t* dlg = lv_msgbox_create(nullptr);
         /* Store the previous transport value on the dialog so the cancel path
          * restores it explicitly instead of inferring it from the (new) current
-         * value — robust if an NVS flush failed and the in-memory and persisted
+         * value — robust if an microSD flush failed and the in-memory and persisted
          * states diverge. */
         lv_obj_set_user_data(dlg, (void*)(uintptr_t)cur);
         lv_msgbox_add_title(dlg, "Reiniciar?");

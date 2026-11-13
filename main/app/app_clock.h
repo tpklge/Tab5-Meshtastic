@@ -3,7 +3,7 @@
 #include <time.h>
 #include "esp_err.h"
 
-// Called after board/NVS init. RTC stores UTC; offset is persisted separately.
+// Called after board/microSD init. RTC stores UTC; offset is persisted separately.
 void app_clock_init();
 bool app_clock_local(struct tm* out);
 int app_clock_offset_minutes();

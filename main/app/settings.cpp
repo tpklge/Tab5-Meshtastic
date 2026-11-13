@@ -1,8 +1,8 @@
 /*
  * Tab5-Meshtastic v2 — persistent settings implementation.
  *
- * Keeps an in-memory cache loaded at init and writes through to NVS on change.
- * One NVS namespace; keys: "saved" (blob array) + "saved_n", "active" (blob) +
+ * Keeps an in-memory cache loaded at init and writes through to microSD on change.
+ * One microSD namespace; keys: "saved" (blob array) + "saved_n", "active" (blob) +
  * "active_ok".
  */
 
@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-#include "nvs.h"
+#include "sd_kv.h"
 #include "esp_log.h"
 
 namespace {
@@ -18,7 +18,7 @@ namespace {
 const char* TAG = "settings";
 const char* NS  = "tab5mesh";
 
-nvs_handle_t   s_h          = 0;
+sd_kv_handle_t   s_h          = 0;
 saved_device_t s_saved[SETTINGS_MAX_SAVED];
 uint32_t       s_saved_n    = 0;
 saved_device_t s_active;
@@ -29,12 +29,11 @@ bool addr_eq(const uint8_t a[6], const uint8_t b[6]) { return memcmp(a, b, 6) ==
 void persist(void)
 {
     if (!s_h) return;
-    nvs_set_blob(s_h, "saved", s_saved, s_saved_n * sizeof(saved_device_t));
-    nvs_set_u32(s_h, "saved_n", s_saved_n);
-    nvs_set_u8(s_h, "active_ok", s_active_ok ? 1 : 0);
-    if (s_active_ok) nvs_set_blob(s_h, "active", &s_active, sizeof(s_active));
-    esp_err_t err = nvs_commit(s_h);
-    if (err != ESP_OK) ESP_LOGW(TAG, "nvs_commit: %s", esp_err_to_name(err));
+    esp_err_t err = sd_kv_set_blob(s_h, "saved", s_saved, s_saved_n * sizeof(saved_device_t));
+    if (err == ESP_OK) err = sd_kv_set_u32(s_h, "saved_n", s_saved_n);
+    if (err == ESP_OK && s_active_ok) err = sd_kv_set_blob(s_h, "active", &s_active, sizeof(s_active));
+    if (err == ESP_OK) err = sd_kv_set_u8(s_h, "active_ok", s_active_ok ? 1 : 0);
+    if (err != ESP_OK) ESP_LOGW(TAG, "sd_kv_commit: %s", esp_err_to_name(err));
 }
 
 }  // namespace
@@ -42,20 +41,20 @@ void persist(void)
 void settings_init(void)
 {
     if (s_h) return;
-    esp_err_t err = nvs_open(NS, NVS_READWRITE, &s_h);
-    if (err != ESP_OK) { ESP_LOGE(TAG, "nvs_open: %s", esp_err_to_name(err)); return; }
+    esp_err_t err = sd_kv_open(NS, SD_KV_READWRITE, &s_h);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "sd_kv_open: %s", esp_err_to_name(err)); return; }
 
     uint32_t n = 0;
-    if (nvs_get_u32(s_h, "saved_n", &n) == ESP_OK && n <= SETTINGS_MAX_SAVED) {
+    if (sd_kv_get_u32(s_h, "saved_n", &n) == ESP_OK && n <= SETTINGS_MAX_SAVED) {
         size_t len = n * sizeof(saved_device_t);
-        if (len && nvs_get_blob(s_h, "saved", s_saved, &len) == ESP_OK)
+        if (len && sd_kv_get_blob(s_h, "saved", s_saved, &len) == ESP_OK)
             s_saved_n = n;
     }
 
     uint8_t ok = 0;
-    if (nvs_get_u8(s_h, "active_ok", &ok) == ESP_OK && ok) {
+    if (sd_kv_get_u8(s_h, "active_ok", &ok) == ESP_OK && ok) {
         size_t len = sizeof(s_active);
-        if (nvs_get_blob(s_h, "active", &s_active, &len) == ESP_OK)
+        if (sd_kv_get_blob(s_h, "active", &s_active, &len) == ESP_OK)
             s_active_ok = true;
     }
     ESP_LOGI(TAG, "loaded: %lu saved, active=%s",

@@ -32,6 +32,7 @@ idf_component_register(
         "storage/message_store.cpp"
         "storage/settings_store.cpp"
         "storage/sd_storage.cpp"
+        "storage/sd_kv.cpp"
     INCLUDE_DIRS
         "."
         "board"
@@ -52,7 +53,6 @@ idf_component_register(
         esp_video
         quirc
         mbedtls
-        nvs_flash
         esp_wifi
         esp_netif
         esp_event
@@ -70,7 +70,6 @@ idf_component_register(
         esp_driver_ledc
         esp_timer
         esp_http_client
-        spiffs
         fatfs
         vfs
         esp_rom

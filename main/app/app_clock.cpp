@@ -1,6 +1,6 @@
 #include "app_clock.h"
 #include "m5tab5_rtc.h"
-#include "nvs.h"
+#include "sd_kv.h"
 #include <sys/time.h>
 #include <stdio.h>
 #include <atomic>
@@ -11,13 +11,13 @@ namespace {
 std::atomic<bool> valid{false};
 std::mutex clock_mutex;
 std::atomic<int16_t> offset{-240}; // // Default UTC-4; user can change in SET.
-nvs_handle_t storage = 0;
+sd_kv_handle_t storage = 0;
 }
 void app_clock_init()
 {
-    if (nvs_open("t5clock", NVS_READWRITE, &storage) == ESP_OK) {
+    if (sd_kv_open("t5clock", SD_KV_READWRITE, &storage) == ESP_OK) {
         int16_t saved_offset = -240;
-        if (nvs_get_i16(storage, "utc_offset", &saved_offset) == ESP_OK) offset = saved_offset;
+        if (sd_kv_get_i16(storage, "utc_offset", &saved_offset) == ESP_OK) offset = saved_offset;
         if (offset < -720 || offset > 840) offset = -240;
     }
     m5tab5_rtc_datetime_t dt;
@@ -52,8 +52,8 @@ esp_err_t app_clock_set(struct tm local, int offset_minutes)
     err = m5tab5_rtc_get_datetime(&check);
     if (err != ESP_OK) return err;
     if (!app_clock_to_epoch(check.to_tm(), 0, &readback) || readback < epoch || readback > epoch + 1) return ESP_FAIL;
-    err = nvs_set_i16(storage, "utc_offset", offset_minutes);
-    if (err == ESP_OK) err = nvs_commit(storage);
+    err = sd_kv_set_i16(storage, "utc_offset", offset_minutes);
+    if (err == ESP_OK) err = sd_kv_commit(storage);
     if (err != ESP_OK) return err;
     struct timeval tv{readback, 0};
     if (settimeofday(&tv, nullptr) != 0) return ESP_FAIL;
@@ -93,8 +93,8 @@ esp_err_t app_clock_set_offset(int offset_minutes)
     if (offset_minutes < -720 || offset_minutes > 840) return ESP_ERR_INVALID_ARG;
     std::lock_guard<std::mutex> guard(clock_mutex);
     if (!storage) return ESP_ERR_INVALID_STATE;
-    esp_err_t err = nvs_set_i16(storage, "utc_offset", offset_minutes);
-    if (err == ESP_OK) err = nvs_commit(storage);
+    esp_err_t err = sd_kv_set_i16(storage, "utc_offset", offset_minutes);
+    if (err == ESP_OK) err = sd_kv_commit(storage);
     if (err == ESP_OK) offset = offset_minutes;
     return err;
 }

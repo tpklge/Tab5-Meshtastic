@@ -1,7 +1,7 @@
 /*
  * Tab5-Meshtastic v2 — Milestone 1: BLE transport + sync engine.
  * -------------------------------------------------------------
- * Boot path: NVS + AppState → board bring-up → power the C6 (wlan_power) →
+ * Boot path: AppState → board bring-up → power the C6 (wlan_power) →
  * display + LVGL shell → esp_hosted (P4<->C6 SDIO) → NimBLE host → BLE
  * transport (scan/bond/sync to the fixed test radio).
  *
@@ -15,7 +15,6 @@
 
 #include "esp_log.h"
 #include "esp_system.h"
-#include "nvs_flash.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -72,27 +71,6 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "reset reason=%d", (int)esp_reset_reason());
     app_state_init();
 
-    /* NVS: settings + the NimBLE bond store. */
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    settings_init();   /* load saved BLE device(s) before transport starts */
-
-    /* Persistent storage.
-     *   - app_storage (SPIFFS): file exports (chat_export.txt, etc).
-     *   - settings_store (NVS): small key/value — transport, brightness, notif.
-     *   - sd_storage (microSD, SDSPI on SPI3): message history archive.
-     *   - message_store: uses the SD when mounted, falls back to RAM only.
-     * The microSD SPI bus is independent of the C6 SDMMC/SDIO link. */
-    app_storage_init();
-    settings_store_init();
-    s_active_transport = settings_store_get()->transport;
-    ESP_ERROR_CHECK(channel_service_init(send_admin_frame));
-
     /* Board bring-up, then power the C6 coprocessor BEFORE esp_hosted. */
     m5::tab5::m5tab5_component_config_t board_cfg = {};
     ESP_ERROR_CHECK(s_board.begin(board_cfg));
@@ -111,6 +89,11 @@ extern "C" void app_main(void)
     }
 
     sd_storage_init();
+    settings_init();
+    app_storage_init();
+    settings_store_init();
+    s_active_transport = settings_store_get()->transport;
+    ESP_ERROR_CHECK(channel_service_init(send_admin_frame));
     message_store_init();
 
     /* Restore persisted messages into AppState so history shows on first load. */
@@ -155,7 +138,7 @@ extern "C" void app_main(void)
         ESP_ERROR_CHECK(esp_hosted_init());
 
         app_state_set_conn(CONN_BOOT, "NIMBLE");
-        ret = nimble_port_init();
+        esp_err_t ret = nimble_port_init();
         if (ret != ESP_OK) { ESP_LOGE(TAG, "nimble_port_init: %s", esp_err_to_name(ret)); return; }
 
         app_state_set_conn(CONN_BOOT, "BLE START");

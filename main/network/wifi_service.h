@@ -16,7 +16,7 @@ struct wifi_snapshot_t {
     char time_status[96];
     wifi_network_t networks[20];
 };
-esp_err_t wifi_service_init(); // NVS, mutex and queue only; before UI.
+esp_err_t wifi_service_init(); // microSD, mutex and queue only; before UI.
 esp_err_t wifi_service_start(); // Worker; after radio transport initialization.
 bool wifi_service_snapshot(wifi_snapshot_t* out);
 bool wifi_service_scan();

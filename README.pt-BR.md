@@ -124,3 +124,16 @@ main/
 | `docs/TEST_MATRIX.md` | Casos de teste automatizados e de hardware |
 | `docs/LAUNCHER.md` | Instalação OTA, backup/restore, layout de partições |
 | `docs/LAUNCHER_INTEROP.md` | Integração com M5Launcher 2.8 (teclado e Wi-Fi) |
+
+### Armazenamento da aplicação
+
+As preferências, dispositivos salvos, credenciais Wi-Fi e fuso horário são
+arquivos `t5app_*.bin`, `tab5mesh_*.bin`, `t5wifi_*.bin` e `t5clock_*.bin`
+na raiz do microSD (`/sdcard`), junto de `t5msg.bin` e `chat_export.txt`.
+O cartão usa FAT e deve estar inserido ao ligar. A aplicação não monta SPIFFS
+nem inicializa NVS para esses dados. Sem cartão, usa valores padrão e mantém
+o histórico apenas em RAM; as operações de persistência retornam erro.
+As configurações antigas da flash não são importadas: configure novamente
+após atualizar. As partições antigas permanecem reservadas, sem uso pela aplicação.
+O relógio de hardware continua guardando a hora no RTC; seu fuso fica no microSD.
+A persistência de vínculos do NimBLE permanece desativada na configuração atual.

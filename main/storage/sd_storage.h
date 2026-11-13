@@ -7,7 +7,9 @@ extern "C" {
 #endif
 
 // Mount point for the microSD card (SDSPI on SPI3, CLK=43, MOSI=44, MISO=39, CS=42).
+#ifndef SD_MOUNT_POINT
 #define SD_MOUNT_POINT "/sdcard"
+#endif
 
 // Attempt to initialize and mount the microSD card. Returns ESP_OK if mounted,
 // ESP_ERR_NOT_FOUND if no card detected (so callers can gracefully fall back

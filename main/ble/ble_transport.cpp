@@ -41,7 +41,7 @@ extern "C" void ble_store_config_init(void);
 static const char* TAG = "ble";
 
 /* Only Meshtastic radios are offered in discovery (name-prefix filter). There is
- * no hardcoded connection target — the active device comes from NVS / the picker. */
+ * no hardcoded connection target — the active device comes from microSD / the picker. */
 static const char* kScanNamePrefix = "Meshtastic";
 
 /* Scan mode: what the GAP discovery callback does with adverts. */
@@ -820,7 +820,7 @@ void ble_transport_start(void)
         s_target.pin  = (uint32_t)atoi(dev.pin);
         strncpy(s_target.name, dev.name, sizeof(s_target.name) - 1);
         s_target.have = true;
-        ESP_LOGI(TAG, "auto-connect target from NVS: %s", dev.name);
+        ESP_LOGI(TAG, "auto-connect target from microSD: %s", dev.name);
     } else {
         s_target.have = false;
         ESP_LOGI(TAG, "no saved device — onboarding");
@@ -838,7 +838,7 @@ void ble_transport_start(void)
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
     ble_att_set_preferred_mtu(512);   /* Meshtastic packets can be large */
-    ble_store_config_init();          /* persist bonds in NVS */
+    ble_store_config_init();          /* RAM bond store (NimBLE persistence disabled in sdkconfig) */
 
     nimble_port_freertos_init(host_task);
     ESP_LOGI(TAG, "transport started; waiting for BLE sync...");

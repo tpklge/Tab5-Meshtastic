@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-// Application settings persisted in the NVS namespace t5app.
+// Application settings persisted in the microSD namespace t5app.
 typedef struct {
     uint8_t transport;    // 0=BLE, 1=UART
     uint8_t brightness;   // 5–100 %
@@ -18,7 +18,7 @@ typedef struct {
     uint32_t screen_timeout_s; // 0=never; otherwise 30–600 seconds
 } app_settings_t;
 
-// Initialize (load from NVS or use defaults). Defaults remain valid on error.
+// Initialize (load from microSD or use defaults). Defaults remain valid on error.
 esp_err_t settings_store_init(void);
 
 // Get current settings (always valid, falls back to defaults).

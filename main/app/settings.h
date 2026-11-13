@@ -1,12 +1,12 @@
 /*
  * Tab5-Meshtastic v2 — persistent settings (PRD §6.1 FR-1.4/1.5).
  *
- * NVS-backed storage for the selected radio: the active device (auto-connect
+ * microSD-backed storage for the selected radio: the active device (auto-connect
  * target) plus the list of saved devices. The NimBLE bond store keeps the
  * pairing keys separately; this keeps the address / PIN / friendly name so we
  * can reconnect (and re-bond) without re-entering anything.
  *
- * Plain C API over its own NVS namespace; safe to call from any task (NVS is
+ * Plain C API over its own microSD namespace; safe to call from any task (microSD is
  * internally locked). Writes only happen on actual change to spare flash.
  */
 #pragma once

@@ -6,7 +6,7 @@
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_timer.h"
-#include "nvs.h"
+#include "sd_kv.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -24,7 +24,7 @@ QueueHandle_t queue;
 TaskHandle_t task;
 wifi_snapshot_t state{};
 Credentials saved{}, pending{};
-nvs_handle_t storage;
+sd_kv_handle_t storage;
 esp_netif_t* netif;
 bool driver_initialized = false, handlers_registered = false, started = false, net_initialized = false;
 bool desired = false, sntp = false, auto_connect = false;
@@ -117,13 +117,15 @@ void handle(const Command& cmd) {
         esp_err_t err = ESP_OK;
         if (started) { esp_wifi_disconnect(); err = esp_wifi_stop(); if (err == ESP_OK) started = false; }
         if (storage) {
-            esp_err_t saved_err = nvs_set_u8(storage, "auto", 0);
+            esp_err_t saved_err = sd_kv_set_u8(storage, "auto", 0);
             if (cmd.action == FORGET) {
-                esp_err_t erase = nvs_erase_key(storage, "credentials");
-                if (erase != ESP_OK && erase != ESP_ERR_NVS_NOT_FOUND) saved_err = erase;
+                esp_err_t erase = sd_kv_erase_key(storage, "credentials");
+                if (erase != ESP_OK && erase != ESP_ERR_NOT_FOUND) saved_err = erase;
             }
-            if (saved_err == ESP_OK) saved_err = nvs_commit(storage);
+            if (saved_err == ESP_OK) saved_err = sd_kv_commit(storage);
             if (saved_err != ESP_OK) err = saved_err;
+        } else if (err == ESP_OK) {
+            err = ESP_ERR_INVALID_STATE;
         }
         if (cmd.action == FORGET && err == ESP_OK) memset(&saved, 0, sizeof(saved));
         memset(&pending, 0, sizeof(pending));
@@ -245,9 +247,9 @@ void worker(void*) {
             if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK && !strcmp((char*)ap.ssid, pending.ssid) && esp_netif_get_ip_info(netif, &ip) == ESP_OK && ip.ip.addr) {
                 retries = 0; retry_at = connect_deadline = 0;
                 saved = pending;
-                esp_err_t err = storage ? nvs_set_blob(storage, "credentials", &saved, sizeof(saved)) : ESP_ERR_INVALID_STATE;
-                if (err == ESP_OK) err = nvs_set_u8(storage, "auto", 1);
-                if (err == ESP_OK) err = nvs_commit(storage);
+                esp_err_t err = storage ? sd_kv_set_blob(storage, "credentials", &saved, sizeof(saved)) : ESP_ERR_INVALID_STATE;
+                if (err == ESP_OK) err = sd_kv_set_u8(storage, "auto", 1);
+                if (err == ESP_OK) err = sd_kv_commit(storage);
                 lock(); state.connected = true; state.saved = err == ESP_OK;
                 strlcpy(state.saved_ssid, saved.ssid, sizeof(state.saved_ssid));
                 snprintf(state.ip, sizeof(state.ip), IPSTR, IP2STR(&ip.ip)); unlock();
@@ -277,10 +279,10 @@ esp_err_t wifi_service_init() {
     if (!mutex || !queue) return ESP_ERR_NO_MEM;
     strlcpy(state.status, "Wi-Fi desligado. Toque em Buscar redes.", sizeof(state.status));
     strlcpy(state.time_status, "Conecte o Wi-Fi para obter a hora da internet.", sizeof(state.time_status));
-    if (nvs_open("t5wifi", NVS_READWRITE, &storage) == ESP_OK) {
+    if (sd_kv_open("t5wifi", SD_KV_READWRITE, &storage) == ESP_OK) {
         size_t size = sizeof(saved);
-        if (nvs_get_blob(storage, "credentials", &saved, &size) != ESP_OK || size != sizeof(saved) || !memchr(saved.ssid, 0, sizeof(saved.ssid)) || !memchr(saved.password, 0, sizeof(saved.password))) memset(&saved, 0, sizeof(saved));
-        uint8_t value = 0; nvs_get_u8(storage, "auto", &value); auto_connect = value == 1;
+        if (sd_kv_get_blob(storage, "credentials", &saved, &size) != ESP_OK || size != sizeof(saved) || !memchr(saved.ssid, 0, sizeof(saved.ssid)) || !memchr(saved.password, 0, sizeof(saved.password))) memset(&saved, 0, sizeof(saved));
+        uint8_t value = 0; sd_kv_get_u8(storage, "auto", &value); auto_connect = value == 1;
         state.saved = saved.ssid[0]; strlcpy(state.saved_ssid, saved.ssid, sizeof(state.saved_ssid));
     }
     return ESP_OK;
